@@ -71,6 +71,15 @@ Enable **Developer Mode** in preferences to access built-in debugging tools:
 
 Contributions are welcome! If you'd like to help improve the project, please check out our [Contributing Guide](CONTRIBUTING.md) for details on how to get started, our development workflow, and coding standards.
 
+## 🛡 Privacy
+
+Your privacy is important. BlenderMentor is designed to be as transparent as possible:
+- **Direct Communication**: All data is sent directly from your computer to the AI provider. No intermediate servers are used.
+- **Local Storage**: API keys are stored only in your local Blender preferences.
+- **Zero Telemetry**: We do not track your usage or collect any personal data.
+
+For more details, see our full [Privacy Notice](PRIVACY.md).
+
 ---
 
 ## 📄 License
