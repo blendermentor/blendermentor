@@ -1,0 +1,799 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# BlenderMentor — Chat panel, step navigator, and dev tools
+
+import bpy
+import json
+import textwrap
+import threading
+
+from ..ai_client import ask_ai
+from ..scene_reader import get_basic_context_json, get_scene_context
+from .highlight import (
+    trigger_highlight_from_json,
+    clear_all_highlights,
+    trigger_highlight,
+)
+
+# ---------------------------------------------------------------------------
+# Background thread state
+# ---------------------------------------------------------------------------
+
+_worker_thread = None
+_worker_result = None   # dict | Exception | None
+_worker_lock = threading.Lock()
+
+
+def _status_callback(message: str):
+    """Called from the worker thread to update the status message.
+
+    We use bpy.app.timers because bpy property writes from a
+    non-main thread are unsafe.
+    """
+    def _set():
+        try:
+            bpy.context.scene.bm_status_message = message
+            # Tag areas so the panel redraws with the new status
+            for area in bpy.context.screen.areas:
+                area.tag_redraw()
+        except Exception:
+            pass
+        return None
+    bpy.app.timers.register(_set, first_interval=0.0)
+
+
+def _ai_worker(prefs_snapshot: dict, basic_ctx: str, prompt: str):
+    """Run in a background thread — calls the AI with tool-calling loop."""
+    global _worker_result
+
+    # Reconstruct a minimal prefs-like object from the snapshot
+    class _PrefsProxy:
+        def __init__(self, d):
+            for k, v in d.items():
+                setattr(self, k, v)
+        def get_selected_model_id(self):
+            return self.model_id
+
+    proxy = _PrefsProxy(prefs_snapshot)
+
+    try:
+        result = ask_ai(proxy, basic_ctx, prompt,
+                        status_callback=_status_callback)
+        with _worker_lock:
+            _worker_result = result
+    except Exception as e:
+        with _worker_lock:
+            _worker_result = e
+
+
+def _poll_worker_done():
+    """Timer callback — checks if the background AI call has finished."""
+    global _worker_result, _worker_thread
+
+    with _worker_lock:
+        result = _worker_result
+
+    if result is None:
+        # Still working — check again soon
+        return 0.15
+
+    # Work is done — process the result on the main thread
+    scene = bpy.context.scene
+    scene.bm_is_processing = False
+    scene.bm_status_message = ""
+
+    if isinstance(result, Exception):
+        reply = scene.bm_chat_history.add()
+        reply.text = f"❌ Error: {str(result)}"
+        reply.is_user = False
+    else:
+        _apply_ai_response(scene, result)
+
+    scene.bm_followup_step = -1
+
+    # Clean up
+    with _worker_lock:
+        _worker_result = None
+    _worker_thread = None
+
+    # Redraw
+    try:
+        for area in bpy.context.screen.areas:
+            area.tag_redraw()
+    except Exception:
+        pass
+
+    return None  # unregister timer
+
+
+def _apply_ai_response(scene, response: dict):
+    """Populate steps and chat from a successful AI response dict."""
+    steps = response.get("steps", [])
+
+    if steps:
+        scene.bm_steps.clear()
+        scene.bm_youtube_query = response.get("youtube_search_query", "")
+        for step_data in steps:
+            s = scene.bm_steps.add()
+            s.instruction = step_data.get("instruction", "")
+            s.description = step_data.get("description", "")
+            s.is_done = False
+            highlight = step_data.get("highlight")
+            s.highlight_json = json.dumps(highlight) if highlight else ""
+
+
+        scene.bm_current_step = 0
+
+        summary = response.get("summary",
+                               f"{len(steps)} steps ready — see below!")
+        reply = scene.bm_chat_history.add()
+        reply.text = f"💡 {summary}"
+        reply.is_user = False
+
+        scene.bm_last_ai_response = json.dumps(response)
+
+        if steps[0].get("highlight"):
+            trigger_highlight(steps[0]["highlight"])
+    else:
+        reply = scene.bm_chat_history.add()
+        reply.text = "The AI did not return any steps. Please try again."
+        reply.is_user = False
+
+
+class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
+    bl_idname = "blendermentor.send_message"
+    bl_label = "Send"
+    bl_description = "Send your message to the AI mentor"
+
+    def execute(self, context):
+        global _worker_thread, _worker_result
+
+        scene = bpy.context.scene
+        user_text = scene.bm_input_text.strip()
+        if not user_text:
+            return {'CANCELLED'}
+
+        # Don't allow sending while already processing
+        if scene.bm_is_processing:
+            self.report({'WARNING'}, "Still processing — please wait.")
+            return {'CANCELLED'}
+
+        # Capture follow-up state before clearing
+        followup_step = scene.bm_followup_step
+        last_response = scene.bm_last_ai_response
+
+        # Store user message (with follow-up context if applicable)
+        msg = scene.bm_chat_history.add()
+        if followup_step >= 0 and followup_step < len(scene.bm_steps):
+            msg.text = f"[Re: Step {followup_step + 1}] {user_text}"
+        else:
+            msg.text = user_text
+        msg.is_user = True
+        scene.bm_input_text = ""
+
+        # Dev mode: handle test commands
+        addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
+        if addon_prefs and addon_prefs.preferences.developer_mode:
+            result = _run_dev_command(scene, user_text)
+            if result:
+                scene.bm_followup_step = -1
+                return {'FINISHED'}
+
+        # Check for blink command (always available)
+        if user_text.lower() == "blink":
+            trigger_highlight({"level": "area", "space": "VIEW_3D", "target": "viewport"})
+            reply = scene.bm_chat_history.add()
+            reply.text = "✨ Blinking the 3D Viewport!"
+            reply.is_user = False
+            scene.bm_followup_step = -1
+            return {'FINISHED'}
+
+        # Get AI preferences
+        if not addon_prefs:
+            reply = scene.bm_chat_history.add()
+            reply.text = "⚠ Please configure BlenderMentor in Edit → Preferences → Add-ons."
+            reply.is_user = False
+            scene.bm_followup_step = -1
+            return {'FINISHED'}
+
+        prefs = addon_prefs.preferences
+        if prefs.provider != 'OLLAMA' and not prefs.api_key:
+            reply = scene.bm_chat_history.add()
+            reply.text = "⚠ No API key set. Go to Edit → Preferences → Add-ons → BlenderMentor."
+            reply.is_user = False
+            scene.bm_followup_step = -1
+            return {'FINISHED'}
+
+        # --- Launch background AI call ---
+        basic_ctx = get_basic_context_json()
+
+        # Build prompt — explicit follow-up, auto follow-up, or fresh
+        if followup_step >= 0 and last_response:
+            # User clicked the ❓ button on a specific step
+            prompt = _build_followup_prompt(
+                user_text, followup_step, last_response, basic_ctx
+            )
+        elif last_response:
+            # Normal input but we have a previous response — let the AI
+            # decide if this is a follow-up or a fresh question (rule 14)
+            prompt = (
+                f"PREVIOUS RESPONSE (for context — the user may or may not be "
+                f"following up on this):\n{last_response}\n\n"
+                f"USER'S NEW MESSAGE:\n\"{user_text}\""
+            )
+        else:
+            prompt = user_text
+
+        # Snapshot prefs so the thread doesn't touch bpy objects
+        prefs_snapshot = {
+            "provider": prefs.provider,
+            "api_key": prefs.api_key,
+            "model_id": prefs.get_selected_model_id(),
+            "ollama_host": getattr(prefs, 'ollama_host', 'http://localhost:11434'),
+        }
+
+        # Mark processing state
+        scene.bm_is_processing = True
+        scene.bm_status_message = "Thinking..."
+
+        with _worker_lock:
+            _worker_result = None
+
+        _worker_thread = threading.Thread(
+            target=_ai_worker,
+            args=(prefs_snapshot, basic_ctx, prompt),
+            daemon=True,
+        )
+        _worker_thread.start()
+
+        # Register a timer to poll for completion
+        bpy.app.timers.register(_poll_worker_done, first_interval=0.2)
+
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_clear_chat(bpy.types.Operator):
+    bl_idname = "blendermentor.clear_chat"
+    bl_label = "Clear Chat"
+    bl_description = "Clear conversation history and steps"
+
+    def execute(self, context):
+        scene = bpy.context.scene
+        scene.bm_chat_history.clear()
+        scene.bm_steps.clear()
+        scene.bm_current_step = 0
+        scene.bm_followup_step = -1
+        scene.bm_last_ai_response = ""
+        scene.bm_status_message = ""
+        scene.bm_is_processing = False
+        clear_all_highlights()
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_step_next(bpy.types.Operator):
+    bl_idname = "blendermentor.step_next"
+    bl_label = "Next"
+    bl_description = "Mark current step done and advance to next"
+
+    def execute(self, context):
+        scene = bpy.context.scene
+        total = len(scene.bm_steps)
+        if total == 0:
+            return {'CANCELLED'}
+
+        # Mark current done
+        idx = scene.bm_current_step
+        if 0 <= idx < total:
+            scene.bm_steps[idx].is_done = True
+
+        # Advance
+        if idx < total - 1:
+            scene.bm_current_step = idx + 1
+            _activate_step(scene, idx + 1)
+        else:
+            clear_all_highlights()
+
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_step_prev(bpy.types.Operator):
+    bl_idname = "blendermentor.step_prev"
+    bl_label = "Prev"
+    bl_description = "Go back to previous step"
+
+    def execute(self, context):
+        scene = bpy.context.scene
+        idx = scene.bm_current_step
+        if idx > 0:
+            scene.bm_current_step = idx - 1
+            _activate_step(scene, idx - 1)
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_step_goto(bpy.types.Operator):
+    bl_idname = "blendermentor.step_goto"
+    bl_label = "Show Highlight"
+    bl_description = "Show the highlight for this step"
+
+    step_index: bpy.props.IntProperty()
+
+    def execute(self, context):
+        scene = bpy.context.scene
+        if 0 <= self.step_index < len(scene.bm_steps):
+            scene.bm_current_step = self.step_index
+            _activate_step(scene, self.step_index)
+        return {'FINISHED'}
+
+# ---------------------------------------------------------------------------
+# Follow-up question operators
+# ---------------------------------------------------------------------------
+
+class BLENDERMENTOR_OT_ask_step(bpy.types.Operator):
+    bl_idname = "blendermentor.ask_step"
+    bl_label = "Ask About This Step"
+    bl_description = "Ask a follow-up question about this step"
+
+    step_index: bpy.props.IntProperty()
+
+    def execute(self, context):
+        scene = context.scene
+        scene.bm_followup_step = self.step_index
+        scene.bm_input_text = ""  # clear for fresh input
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_cancel_followup(bpy.types.Operator):
+    bl_idname = "blendermentor.cancel_followup"
+    bl_label = "Cancel Follow-up"
+    bl_description = "Cancel the follow-up question and return to normal input"
+
+    def execute(self, context):
+        context.scene.bm_followup_step = -1
+        return {'FINISHED'}
+
+
+# Dev-mode operators
+class BLENDERMENTOR_OT_test_highlight(bpy.types.Operator):
+    bl_idname = "blendermentor.test_highlight"
+    bl_label = "Test Highlight"
+    bl_description = "Fire a highlight by target name"
+
+    def execute(self, context):
+        scene = bpy.context.scene
+        target = getattr(scene, 'bm_dev_highlight_target', '')
+        if not target:
+            return {'CANCELLED'}
+
+        _run_dev_command(scene, target)
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_open_youtube_search(bpy.types.Operator):
+    bl_idname = "blendermentor.open_youtube_search"
+    bl_label = "Open YouTube Search"
+    bl_description = "Open a YouTube search for this step in your browser"
+
+    query: bpy.props.StringProperty()
+
+    def execute(self, context):
+        import urllib.parse
+        q = self.query.strip()
+        if not q:
+            return {'CANCELLED'}
+        
+        # Ensure it has "blender" in the query
+        if "blender" not in q.lower():
+            q = f"blender {q}"
+            
+        encoded_query = urllib.parse.quote_plus(q)
+        url = f"https://www.youtube.com/results?search_query={encoded_query}"
+        bpy.ops.wm.url_open(url=url)
+        return {'FINISHED'}
+
+class BLENDERMENTOR_OT_load_mock_steps(bpy.types.Operator):
+    bl_idname = "blendermentor.load_mock_steps"
+    bl_label = "Load Mock Steps"
+    bl_description = "Inject test steps into the step navigator"
+
+    def execute(self, context):
+        scene = bpy.context.scene
+        scene.bm_steps.clear()
+        scene.bm_youtube_query = "blender subdivision surface modifier tutorial"
+
+        mock = [
+            {"instruction": "Look at the 3D Viewport",
+             "description": "The 3D Viewport is the large central area where you can see and interact with your 3D objects. It usually takes up most of the Blender window.",
+             "highlight": {"level": "area", "space": "VIEW_3D", "target": "viewport"}},
+            {"instruction": "Open the Properties editor",
+             "description": "The Properties editor is usually on the right side of the screen. It has a vertical strip of icons (tabs) that let you access different settings.",
+             "highlight": {"level": "area", "space": "PROPERTIES", "target": "properties"}},
+            {"instruction": "Click the wrench icon (Modifiers tab)",
+             "description": "The wrench icon is in the vertical icon strip of the Properties editor. It opens the Modifier Properties panel where you can add and manage modifiers.",
+             "highlight": {"level": "tab", "space": "PROPERTIES", "target": "modifiers"}},
+            {"instruction": "Click 'Add Modifier'",
+             "description": "The 'Add Modifier' dropdown button is at the top of the Modifiers panel. Clicking it reveals categories like Generate, Deform, and Physics.",
+             "highlight": {"level": "panel", "space": "PROPERTIES", "target": "modifier_add_button"}},
+            {"instruction": "Select Subdivision Surface from the menu",
+             "description": "Subdivision Surface is inside the 'Generate' category. It smooths your mesh by subdividing its faces. Start with a viewport level of 1 or 2.",
+             "highlight": None},
+        ]
+
+        for step_data in mock:
+            s = scene.bm_steps.add()
+            s.instruction = step_data["instruction"]
+            s.description = step_data.get("description", "")
+            s.is_done = False
+            h = step_data.get("highlight")
+            s.highlight_json = json.dumps(h) if h else ""
+
+        scene.bm_current_step = 0
+        # Store mock response for follow-up testing
+        scene.bm_last_ai_response = json.dumps({
+            "summary": "Here's how to add a Subdivision Surface modifier.",
+            "youtube_search_query": scene.bm_youtube_query,
+            "steps": mock
+        })
+        if mock[0].get("highlight"):
+            trigger_highlight(mock[0]["highlight"])
+
+        self.report({'INFO'}, f"Loaded {len(mock)} mock steps.")
+        return {'FINISHED'}
+
+
+# ---------------------------------------------------------------------------
+# Helper: follow-up prompt builder
+# ---------------------------------------------------------------------------
+
+def _build_followup_prompt(user_question, step_index, last_response_json, scene_ctx):
+    """Build a prompt that includes previous context for follow-up questions."""
+    return (
+        f"PREVIOUS RESPONSE (for context):\n{last_response_json}\n\n"
+        f"The user is currently on Step {step_index + 1} and has a follow-up question:\n"
+        f"\"{user_question}\"\n\n"
+        f"Please directly ANSWER the user's question in your 'summary' field. "
+        f"Then, provide a NEW complete set of steps that incorporates "
+        f"any needed changes or clarifications based on their question. "
+        f"Do NOT repeat the previous response verbatim — adapt and improve it."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Helper: dev commands (test mode targets)
+# ---------------------------------------------------------------------------
+
+_DEV_TARGETS = {
+    # Area-level
+    "viewport":     {"level": "area", "space": "VIEW_3D", "target": "viewport"},
+    "properties":   {"level": "area", "space": "PROPERTIES", "target": "properties"},
+    "outliner":     {"level": "area", "space": "OUTLINER", "target": "outliner"},
+    "timeline":     {"level": "area", "space": "DOPESHEET_EDITOR", "target": "timeline"},
+    "graph_editor": {"level": "area", "space": "GRAPH_EDITOR", "target": "graph_editor"},
+    # Tab-level
+    "modifiers":    {"level": "tab", "space": "PROPERTIES", "target": "modifiers"},
+    "render":       {"level": "tab", "space": "PROPERTIES", "target": "render"},
+    "output":       {"level": "tab", "space": "PROPERTIES", "target": "output"},
+    "world":        {"level": "tab", "space": "PROPERTIES", "target": "world"},
+    "object":       {"level": "tab", "space": "PROPERTIES", "target": "object"},
+    "particles":    {"level": "tab", "space": "PROPERTIES", "target": "particles"},
+    "physics":      {"level": "tab", "space": "PROPERTIES", "target": "physics"},
+    "constraints":  {"level": "tab", "space": "PROPERTIES", "target": "constraints"},
+    # Region-level
+    "header":       {"level": "region", "space": "VIEW_3D", "target": "header"},
+    "toolbar":      {"level": "region", "space": "VIEW_3D", "target": "toolbar"},
+    "sidebar":      {"level": "region", "space": "VIEW_3D", "target": "sidebar"},
+    # Panel-level (menus)
+    "add_menu":     {"level": "panel", "space": "VIEW_3D", "target": "add_menu"},
+    "object_menu":  {"level": "panel", "space": "VIEW_3D", "target": "object_menu"},
+}
+
+
+def _run_dev_command(scene, text):
+    """Check if text matches a known dev target. Returns True if handled."""
+    cmd = text.strip().lower()
+    target_data = _DEV_TARGETS.get(cmd)
+    if target_data:
+        trigger_highlight(target_data)
+        reply = scene.bm_chat_history.add()
+        reply.text = f"🔦 Highlighting: {cmd}"
+        reply.is_user = False
+        return True
+    return False
+
+
+def _activate_step(scene, index):
+    """Trigger the highlight for the given step index."""
+    if 0 <= index < len(scene.bm_steps):
+        step = scene.bm_steps[index]
+        trigger_highlight_from_json(step.highlight_json)
+
+# ---------------------------------------------------------------------------
+# Panels
+# ---------------------------------------------------------------------------
+
+class BLENDERMENTOR_PT_chat(bpy.types.Panel):
+    bl_label = "BlenderMentor"
+    bl_idname = "BLENDERMENTOR_PT_chat"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "BlenderMentor"
+    bl_order = 0
+
+    def draw_header(self, context):
+        layout = self.layout
+        row = layout.row(align=True)
+
+        # Pop-out / dock buttons in the header
+        row.operator("blendermentor.popout", text="", icon='WINDOW')
+
+        is_docked = context.scene.get("bm_is_docked", False)
+        if is_docked:
+            row.operator("blendermentor.undock", text="", icon='PANEL_CLOSE')
+        else:
+            row.operator("blendermentor.dock", text="", icon='SNAP_PEEL_OBJECT')
+
+        # DEV badge
+        addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
+        if addon_prefs and addon_prefs.preferences.developer_mode:
+            row.label(text="DEV", icon='TOOL_SETTINGS')
+
+    def draw(self, context):
+        layout = self.layout
+        scene = bpy.context.scene
+
+        # --- Chat history ---
+        char_width = _calc_char_width(context)
+
+        box = layout.box()
+        if len(scene.bm_chat_history) == 0:
+            box.label(text="Ask me anything about Blender!", icon='LIGHT')
+        else:
+            col = box.column(align=True)
+            for msg in scene.bm_chat_history:
+                prefix = "You" if msg.is_user else "Mentor"
+                icon = 'USER' if msg.is_user else 'OUTLINER_OB_LIGHT'
+
+                # Wrap text
+                lines = textwrap.wrap(msg.text, width=char_width) or [msg.text]
+                for i, line in enumerate(lines):
+                    if i == 0:
+                        col.label(text=f"{prefix}: {line}", icon=icon)
+                    else:
+                        col.label(text=f"  {line}")
+                col.separator(factor=0.3)
+
+        # --- Live status indicator (shown during AI processing) ---
+        if scene.bm_is_processing:
+            status_box = layout.box()
+            status_row = status_box.row(align=True)
+            status_row.alert = True
+            status_msg = scene.bm_status_message or "Thinking..."
+            status_row.label(text=f"⏳ {status_msg}", icon='SORTTIME')
+
+        # --- Follow-up indicator ---
+        followup = scene.bm_followup_step
+        if followup >= 0 and followup < len(scene.bm_steps):
+            followup_box = layout.box()
+            row = followup_box.row(align=True)
+            row.label(text=f"Asking about Step {followup + 1}",
+                      icon='QUESTION')
+            row.operator("blendermentor.cancel_followup", text="", icon='X')
+
+        # --- Input + Send ---
+        row = layout.row(align=True)
+        row.enabled = not scene.bm_is_processing
+        row.prop(scene, "bm_input_text", text="")
+        row.operator("blendermentor.send_message", text="", icon='PLAY')
+
+
+
+
+        # --- Clear button ---
+        layout.operator("blendermentor.clear_chat", text="Clear", icon='TRASH')
+
+
+class BLENDERMENTOR_PT_steps(bpy.types.Panel):
+    bl_label = "Guided Steps"
+    bl_idname = "BLENDERMENTOR_PT_steps"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "BlenderMentor"
+    bl_order = 1
+
+    def draw(self, context):
+        layout = self.layout
+        scene = bpy.context.scene
+        steps = scene.bm_steps
+        total = len(steps)
+        char_width = _calc_char_width(context)
+
+        if total == 0:
+            layout.label(text="No steps yet. Ask a question above!", icon='INFO')
+            return
+
+        current = scene.bm_current_step
+
+        # Top row navigation and search buttons (right-aligned)
+        row = layout.row()
+        row.alignment = 'RIGHT'
+
+        prev_row = row.row(align=True)
+        prev_row.enabled = (current > 0)
+        prev_row.operator("blendermentor.step_prev", text="", icon='TRIA_LEFT')
+
+        next_row = row.row(align=True)
+        next_row.enabled = (current < total - 1)
+        next_row.operator("blendermentor.step_next", text="", icon='TRIA_RIGHT')
+
+        if scene.bm_youtube_query:
+            url_op = row.operator("blendermentor.open_youtube_search", text="", icon='URL')
+            url_op.query = scene.bm_youtube_query
+
+        layout.separator(factor=0.5)
+
+        # List all steps
+        for i, step in enumerate(steps):
+            is_current = (i == current)
+            is_done = step.is_done
+
+            # Choose icon
+            if is_done:
+                icon = 'CHECKMARK'
+            elif is_current:
+                icon = 'LAYER_ACTIVE'
+            else:
+                icon = 'LAYER_USED'
+
+            # Step box drawn with uniform full brightness
+            step_box = layout.box()
+            step_box.active = True
+
+            # Header row: static label + optional lightbulb + ask follow-up button
+            header = step_box.row(align=True)
+            
+            # Static step label
+            header.label(text=f"Step {i + 1}", icon=icon)
+
+            # Dedicated highlight re-trigger button (if a highlight target is available)
+            if step.highlight_json:
+                light_op = header.operator("blendermentor.step_goto", text="", icon='LIGHT')
+                light_op.step_index = i
+
+            # Ask follow-up button (always available on each step)
+            ask_op = header.operator("blendermentor.ask_step", text="", icon='QUESTION')
+            ask_op.step_index = i
+
+            # Instruction text (wrapped in flat, left-aligned clickable buttons to activate/highlight step on click)
+            col = step_box.column(align=True)
+            lines = textwrap.wrap(step.instruction, width=max(20, char_width - 6))
+            for line in lines:
+                row_line = col.row()
+                row_line.alignment = 'LEFT'
+                op = row_line.operator("blendermentor.step_goto", text=line, emboss=False)
+                op.step_index = i
+
+            # Description text (dimmer, wrapped in flat, left-aligned clickable buttons)
+            if step.description:
+                desc_col = step_box.column(align=True)
+                desc_col.scale_y = 0.8
+                desc_lines = textwrap.wrap(step.description, width=max(20, char_width - 6))
+                for dline in desc_lines:
+                    row_line = desc_col.row()
+                    row_line.alignment = 'LEFT'
+                    op = row_line.operator("blendermentor.step_goto", text=dline, icon='BLANK1', emboss=False)
+                    op.step_index = i
+
+
+class BLENDERMENTOR_PT_devtools(bpy.types.Panel):
+    bl_label = "Dev Tools"
+    bl_idname = "BLENDERMENTOR_PT_devtools"
+    bl_space_type = 'VIEW_3D'
+    bl_region_type = 'UI'
+    bl_category = "BlenderMentor"
+    bl_order = 2
+    bl_options = {'DEFAULT_CLOSED'}
+
+    @classmethod
+    def poll(cls, context):
+        addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
+        return addon_prefs and addon_prefs.preferences.developer_mode
+
+    def draw(self, context):
+        layout = self.layout
+        scene = bpy.context.scene
+
+        # --- Highlight Tester ---
+        layout.label(text="Highlight Tester", icon='LIGHT')
+        row = layout.row(align=True)
+        row.prop(scene, "bm_dev_highlight_target", text="")
+        row.operator("blendermentor.test_highlight", text="", icon='PLAY')
+
+        targets = ", ".join(sorted(_DEV_TARGETS.keys()))
+        col = layout.column(align=True)
+        col.scale_y = 0.7
+        for line in textwrap.wrap(f"Targets: {targets}", width=35):
+            col.label(text=line)
+
+        layout.separator()
+
+        # --- Step Navigator Tester ---
+        layout.label(text="Step Navigator Tester", icon='SEQUENCE')
+        layout.operator("blendermentor.load_mock_steps", icon='FILE_NEW')
+
+        layout.separator()
+
+        # --- Scene Context Inspector ---
+        layout.label(text="Scene Context (Base)", icon='SCENE_DATA')
+        box = layout.box()
+        try:
+            from ..scene_reader import get_basic_context, TOOL_REGISTRY
+            ctx_data = get_basic_context()
+            col = box.column(align=True)
+            col.scale_y = 0.7
+            for key, val in ctx_data.items():
+                text = f"{key}: {val}"
+                for line in textwrap.wrap(text, width=35):
+                    col.label(text=line)
+
+            # Show available on-demand tools
+            layout.label(text="Available Tools", icon='TOOL_SETTINGS')
+            tool_box = layout.box()
+            tool_col = tool_box.column(align=True)
+            tool_col.scale_y = 0.7
+            for name in TOOL_REGISTRY:
+                tool_col.label(text=f"• {name}")
+        except Exception as e:
+            box.label(text=f"Error: {e}", icon='ERROR')
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
+def _calc_char_width(context):
+    """Estimate how many characters fit in the panel width."""
+    try:
+        ui_scale = context.preferences.view.ui_scale
+        w = context.region.width / ui_scale
+        return max(20, int(w / 8.5))
+    except Exception:
+        return 30
+
+
+# ---------------------------------------------------------------------------
+# Registration
+# ---------------------------------------------------------------------------
+
+_classes = (
+    BLENDERMENTOR_OT_send_message,
+    BLENDERMENTOR_OT_clear_chat,
+    BLENDERMENTOR_OT_step_next,
+    BLENDERMENTOR_OT_step_prev,
+    BLENDERMENTOR_OT_step_goto,
+    BLENDERMENTOR_OT_ask_step,
+    BLENDERMENTOR_OT_cancel_followup,
+    BLENDERMENTOR_OT_test_highlight,
+    BLENDERMENTOR_OT_open_youtube_search,
+    BLENDERMENTOR_OT_load_mock_steps,
+    BLENDERMENTOR_PT_chat,
+    BLENDERMENTOR_PT_steps,
+    BLENDERMENTOR_PT_devtools,
+)
+
+
+
+def register():
+    for cls in _classes:
+        bpy.utils.register_class(cls)
+
+    # Dev tools property
+    bpy.types.Scene.bm_dev_highlight_target = bpy.props.StringProperty(
+        name="Target", default="viewport"
+    )
+
+def unregister():
+    try:
+        del bpy.types.Scene.bm_dev_highlight_target
+    except Exception:
+        pass
+
+    for cls in reversed(_classes):
+        bpy.utils.unregister_class(cls)

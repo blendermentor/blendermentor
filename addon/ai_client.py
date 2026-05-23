@@ -1,0 +1,538 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# BlenderMentor — AI client (Gemini / Claude / Ollama) with tool-calling loop
+#
+# Instead of dumping all scene context upfront, this module sends a minimal
+# base context and declares "tools" that the AI can call on-demand to fetch
+# additional Blender state.  The agentic loop repeats until the AI produces
+# the final structured step-list JSON.
+
+import json
+import ssl
+import urllib.request
+import urllib.error
+
+from .scene_reader import TOOL_REGISTRY, execute_tool
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+MAX_TOOL_ROUNDS = 6   # safety cap — prevent infinite loops
+
+# ---------------------------------------------------------------------------
+# System prompt — enforces structured JSON from the AI
+# ---------------------------------------------------------------------------
+
+SYSTEM_PROMPT = """\
+You are BlenderMentor, an expert Blender teacher embedded directly inside Blender.
+
+Rules:
+1. NEVER perform actions in Blender yourself. Always guide the user to do it.
+2. Your FINAL response must be ONLY a valid JSON object matching the schema below. No prose, no markdown, no explanation outside the JSON.
+3. Break your guidance into clear numbered steps. Each step must contain a single action.
+4. Each step must have:
+   - "instruction": a short, clear action (e.g. "Click Add Modifier")
+   - "description": a brief helpful explanation with extra context (e.g. "The Add Modifier button is at the top of the Modifiers panel. It opens a dropdown with categories like Generate, Deform, and Physics.")
+   - "highlight": which UI element to highlight (see format below), or null if none
+5. Use exact Blender UI names — panel labels, button text, menu paths.
+6. Keep each step focused on one action only.
+7. Use the provided scene context to tailor your response.
+8. The "description" should provide useful context the user might not know — where to find things, what submenus look like, what an option does, etc.
+9. Include a "summary" field:
+   - For a normal request, provide a friendly sentence summarizing what you will help with.
+   - For a follow-up question, use this field to DIRECTLY ANSWER the user's question.
+   This is shown directly in the chat window as a conversational reply.
+   Example: "Sure! Here's how to add a Subdivision Surface modifier to your Cube."
+10. The scene context includes "visible_editors" — a list of editor types currently
+    visible on screen. If your steps reference an editor NOT in this list, you MUST
+    first include a step instructing the user to open it (e.g. split an area, or
+    change an existing editor's type via the editor type selector in its header).
+    Only AFTER that step should you reference that editor in a highlight.
+11. When a follow-up question is provided with a previous response, answer the question
+    directly in the "summary" field. Then, provide an updated, complete step list that
+    incorporates the clarification or new requirements. Even if the user just asks a
+    conceptual question, always provide the full steps for the task.
+12. You have access to TOOLS that let you inspect the Blender scene in more detail.
+    If the user's question requires information you don't have in the base context
+    (e.g. render settings, viewport shading, object details, selection info), call
+    the appropriate tool BEFORE providing your final answer.
+    If you need to check specific properties, values, or systems (like camera focal lengths, 
+    custom properties, or compositor node trees) that are not covered by other tools, 
+    and the "evaluate_python_expression" tool is available, you MUST use it to check the 
+    exact value rather than asking the user to check it.
+    You may call multiple tools if needed. Only provide your final JSON answer when
+    you have enough information.
+13. When a step involves a menu or action that has a keyboard shortcut, ALWAYS mention it.
+    Format the instruction like: "Click Add in the header menu bar (or press Shift+A)".
+    Common shortcuts: Shift+A (Add menu), X or Delete (delete), G (grab/move), R (rotate),
+    S (scale), Tab (toggle Edit Mode), Ctrl+Z (undo), Numpad 0 (camera view).
+14. If a PREVIOUS RESPONSE is included in the context, the user's new message may be a
+    follow-up to that response. If the message references the previous steps or asks for
+    clarification (e.g. "what does that mean?", "can I do it differently?", "why?"),
+    treat it as a follow-up: answer directly in the "summary" field and provide an
+    updated, complete step list. If the message is clearly a new, unrelated topic,
+    treat it as a fresh question.
+15. Include a root-level "youtube_search_query" field:
+    - This is a single, AI-optimized YouTube search query for the overall task described by the steps (e.g., "blender subdivision surface modifier tutorial").
+    - Keep it concise, relevant, and prefix it with "blender ".
+
+HIGHLIGHT LEVELS (from most precise to least precise — always pick the MOST precise level that fits):
+
+   { "level": "panel" | "tab" | "region" | "area", "space": "<BLENDER_SPACE_TYPE>", "target": "<target_name>" }
+
+- "panel"   — MOST PRECISE. Highlights a specific panel, menu, or header with a visual glow.
+              Use this whenever the target is a known panel or menu from this list:
+              modifier_add_button, material_slots, render_settings, output_settings, transform_panel,
+              view3d_header, properties_header, outliner_header,
+              add_menu, mesh_add_menu, curve_add_menu, surface_add_menu, light_add_menu,
+              object_menu, select_menu, view_menu, shader_add_menu.
+- "tab"     — Highlights a specific tab icon in the Properties NAVIGATION_BAR.
+              "space" must be "PROPERTIES". "target" is one of: render, output, view_layer, scene,
+              world, object, modifiers, particles, physics, constraints, object_data.
+- "region"  — Highlights a specific region WITHIN an editor (header bar, toolbar, sidebar).
+              "target" is one of: header, toolbar, tool_header, sidebar, n_panel.
+              Use this when the user needs to look at a general area like the header menu bar,
+              but there is no specific "panel" target for the exact item.
+- "area"    — LEAST PRECISE. Last resort ONLY. Highlights an entire editor.
+              Use ONLY when directing the user to open or look at a whole editor that is not
+              yet visible (e.g. "open the Timeline editor").
+              Do NOT use "area" when the user needs to click something specific within an editor.
+
+HIGHLIGHT DECISION RULES — follow these strictly:
+- When a step involves clicking a menu in the header (Add, Object, View, Select, Mesh, etc.),
+  use level "panel" with the matching menu target (e.g. "add_menu", "object_menu", "view_menu").
+  If no specific menu target exists, use level "region" with target "header". NEVER use "area".
+- When a step involves clicking a tool in the left toolbar, use level "region" with target "toolbar".
+- When a step involves the N-panel sidebar, use level "region" with target "sidebar".
+- When a step involves a Properties tab icon, use level "tab".
+- When a step involves a specific panel within Properties (like Add Modifier), use level "panel".
+- Use level "area" ONLY for steps like "open the Outliner" or "look at the Timeline" where
+  the entire editor is the target.
+
+EXAMPLES of correct highlight usage:
+  Step: "Click Add in the header menu bar" →
+    CORRECT:   {"level": "panel", "space": "VIEW_3D", "target": "add_menu"}
+    WRONG:     {"level": "area", "space": "VIEW_3D", "target": "viewport"}
+  Step: "Select the Modifier Properties tab (wrench icon)" →
+    CORRECT:   {"level": "tab", "space": "PROPERTIES", "target": "modifiers"}
+  Step: "Look at the header bar of the 3D Viewport" →
+    CORRECT:   {"level": "region", "space": "VIEW_3D", "target": "header"}
+    WRONG:     {"level": "area", "space": "VIEW_3D", "target": "viewport"}
+  Step: "Open the Outliner editor" →
+    CORRECT:   {"level": "area", "space": "OUTLINER", "target": "outliner"}
+
+Response schema:
+{ "summary": "<friendly one-liner>", "youtube_search_query": "<string>", "steps": [ { "index": <int>, "instruction": "<string>", "description": "<string>", "highlight": <object|null> } ] }
+"""
+
+
+
+# ---------------------------------------------------------------------------
+# Tool schema builders (provider-specific formats)
+# ---------------------------------------------------------------------------
+
+def _build_gemini_tools(allow_python_eval: bool) -> list:
+    """Build the Gemini-format tool declarations from TOOL_REGISTRY."""
+    declarations = []
+    for name, entry in TOOL_REGISTRY.items():
+        if name == "evaluate_python_expression" and not allow_python_eval:
+            continue
+        decl = {
+            "name": name,
+            "description": entry["description"],
+            "parameters": entry["parameters"],
+        }
+        declarations.append(decl)
+    return [{"function_declarations": declarations}]
+
+
+def _build_claude_tools(allow_python_eval: bool) -> list:
+    """Build the Claude-format tool declarations from TOOL_REGISTRY."""
+    tools = []
+    for name, entry in TOOL_REGISTRY.items():
+        if name == "evaluate_python_expression" and not allow_python_eval:
+            continue
+        tool = {
+            "name": name,
+            "description": entry["description"],
+            "input_schema": entry["parameters"],
+        }
+        tools.append(tool)
+    return tools
+
+
+def _build_ollama_tools(allow_python_eval: bool) -> list:
+    """Build the Ollama-format tool declarations from TOOL_REGISTRY."""
+    tools = []
+    for name, entry in TOOL_REGISTRY.items():
+        if name == "evaluate_python_expression" and not allow_python_eval:
+            continue
+        tool = {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": entry["description"],
+                "parameters": entry["parameters"],
+            },
+        }
+        tools.append(tool)
+    return tools
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def ask_ai(prefs, basic_context_json: str, user_message: str,
+           status_callback=None) -> dict:
+    """
+    Send *user_message* (with minimal scene context) to the configured AI
+    provider.  The AI may call tools to fetch additional context.
+
+    Args:
+        prefs:              AddonPreferences instance
+        basic_context_json: JSON string of get_basic_context()
+        user_message:       The user's question or follow-up prompt
+        status_callback:    Optional callable(str) invoked with status
+                            messages like "Thinking...", "Fetching render
+                            settings..."  Called from the worker thread.
+
+    Returns the parsed JSON dict (with a "steps" key) on success.
+    Raises on network / parsing errors.
+    """
+    import bpy
+    if hasattr(bpy.app, "online_access") and not bpy.app.online_access:
+        raise RuntimeError("Internet access is disabled in Blender's System Preferences (Allow Internet Access).")
+
+    provider = prefs.provider
+
+    def _status(msg):
+        if status_callback:
+            status_callback(msg)
+
+    _status("Thinking...")
+
+    if provider == 'GEMINI':
+        raw = _gemini_tool_loop(prefs, basic_context_json, user_message, _status)
+    elif provider == 'CLAUDE':
+        raw = _claude_tool_loop(prefs, basic_context_json, user_message, _status)
+    elif provider == 'OLLAMA':
+        raw = _ollama_tool_loop(prefs, basic_context_json, user_message, _status)
+    else:
+        raise ValueError(f"Unknown provider: {provider}")
+
+    _status("Processing response...")
+    return _parse_response(raw)
+
+
+def list_models(provider: str, api_key: str) -> list:
+    """Fetch available models from the provider. Returns [(id, name), ...]."""
+    from .preferences import BLENDERMENTOR_OT_fetch_models
+    return BLENDERMENTOR_OT_fetch_models._fetch(provider, api_key)
+
+
+# ---------------------------------------------------------------------------
+# Gemini — tool-calling loop
+# ---------------------------------------------------------------------------
+
+def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
+                      status_cb) -> str:
+    """Run the Gemini generateContent loop with tool calling."""
+    ctx = ssl.create_default_context()
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/"
+        f"models/{prefs.get_selected_model_id()}:generateContent?key={prefs.api_key}"
+    )
+
+    allow_python_eval = getattr(prefs, 'allow_python_eval', False)
+    tools = _build_gemini_tools(allow_python_eval)
+
+    # Build initial conversation
+    contents = [
+        {"role": "user", "parts": [{"text": f"Scene context:\n{base_ctx}\n\nUser question:\n{prompt}"}]},
+    ]
+
+    for round_num in range(MAX_TOOL_ROUNDS):
+        body = json.dumps({
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "contents": contents,
+            "tools": tools,
+        }).encode()
+
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+            data = json.loads(resp.read().decode())
+
+        # Extract model response parts
+        try:
+            candidate = data["candidates"][0]["content"]
+            parts = candidate["parts"]
+        except (KeyError, IndexError) as e:
+            raise RuntimeError(f"Unexpected Gemini response structure: {e}")
+
+        # Check if any part is a function call
+        function_calls = [p for p in parts if "functionCall" in p]
+
+        if not function_calls:
+            # No tool calls — extract text response
+            text_parts = [p.get("text", "") for p in parts if "text" in p]
+            return "".join(text_parts)
+
+        # Append model response to conversation
+        contents.append({"role": "model", "parts": parts})
+
+        # Execute each tool call and build function responses
+        func_response_parts = []
+        for fc_part in function_calls:
+            fc = fc_part["functionCall"]
+            tool_name = fc["name"]
+            tool_args = fc.get("args", {})
+            call_id = fc.get("id")
+
+            # Update status
+            friendly = tool_name.replace("get_", "").replace("_", " ").title()
+            status_cb(f"Checking {friendly}...")
+
+            # Execute the tool
+            result = execute_tool(tool_name, tool_args)
+
+            fr = {
+                "functionResponse": {
+                    "name": tool_name,
+                    "response": result,
+                }
+            }
+            if call_id:
+                fr["functionResponse"]["id"] = call_id
+
+            func_response_parts.append(fr)
+
+        # Append tool results to conversation
+        contents.append({"role": "function", "parts": func_response_parts})
+
+    raise RuntimeError("AI exceeded maximum tool-calling rounds without producing a final answer.")
+
+
+# ---------------------------------------------------------------------------
+# Claude — tool-calling loop
+# ---------------------------------------------------------------------------
+
+def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
+                      status_cb) -> str:
+    """Run the Claude messages loop with tool calling."""
+    ctx = ssl.create_default_context()
+    url = "https://api.anthropic.com/v1/messages"
+
+    allow_python_eval = getattr(prefs, 'allow_python_eval', False)
+    tools = _build_claude_tools(allow_python_eval)
+
+    messages = [
+        {"role": "user", "content": f"Scene context:\n{base_ctx}\n\nUser question:\n{prompt}"},
+    ]
+
+    for round_num in range(MAX_TOOL_ROUNDS):
+        body = json.dumps({
+            "model": prefs.get_selected_model_id(),
+            "max_tokens": 4096,
+            "system": SYSTEM_PROMPT,
+            "tools": tools,
+            "messages": messages,
+        }).encode()
+
+        req = urllib.request.Request(url, data=body, headers={
+            "x-api-key": prefs.api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }, method="POST")
+
+        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+            data = json.loads(resp.read().decode())
+
+        stop_reason = data.get("stop_reason", "")
+        content_blocks = data.get("content", [])
+
+        # Check if AI wants to use tools
+        if stop_reason != "tool_use":
+            # Final response — extract text
+            text_parts = [
+                block["text"]
+                for block in content_blocks
+                if block.get("type") == "text"
+            ]
+            return "".join(text_parts)
+
+        # Append assistant message (with tool_use blocks)
+        messages.append({"role": "assistant", "content": content_blocks})
+
+        # Execute each tool call
+        tool_results = []
+        for block in content_blocks:
+            if block.get("type") != "tool_use":
+                continue
+
+            tool_name = block["name"]
+            tool_args = block.get("input", {})
+            tool_id = block["id"]
+
+            # Update status
+            friendly = tool_name.replace("get_", "").replace("_", " ").title()
+            status_cb(f"Checking {friendly}...")
+
+            result = execute_tool(tool_name, tool_args)
+
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tool_id,
+                "content": json.dumps(result),
+            })
+
+        # Append tool results as a user message
+        messages.append({"role": "user", "content": tool_results})
+
+    raise RuntimeError("AI exceeded maximum tool-calling rounds without producing a final answer.")
+
+
+# ---------------------------------------------------------------------------
+# Ollama — tool-calling loop
+# ---------------------------------------------------------------------------
+
+def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
+                      status_cb) -> str:
+    """Run the Ollama chat loop with tool calling."""
+    host = getattr(prefs, 'ollama_host', 'http://localhost:11434').rstrip("/")
+    url = f"{host}/api/chat"
+
+    allow_python_eval = getattr(prefs, 'allow_python_eval', False)
+    tools = _build_ollama_tools(allow_python_eval)
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Scene context:\n{base_ctx}\n\nUser question:\n{prompt}"},
+    ]
+
+    for round_num in range(MAX_TOOL_ROUNDS):
+        body = json.dumps({
+            "model": prefs.get_selected_model_id(),
+            "messages": messages,
+            "tools": tools,
+            "stream": False,
+            "options": {
+                "temperature": 0.3,
+                "num_predict": 4096,
+            },
+        }).encode()
+
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.URLError as e:
+            raise RuntimeError(
+                f"Cannot reach Ollama at {host}. Is Ollama running? ({e.reason})"
+            )
+
+        msg = data.get("message", {})
+        tool_calls = msg.get("tool_calls", [])
+
+        if not tool_calls:
+            # Final response — return text content
+            content = msg.get("content", "")
+            if content:
+                return content
+            raise RuntimeError("Ollama returned empty response with no tool calls.")
+
+        # Append assistant message to conversation
+        messages.append(msg)
+
+        # Execute each tool call
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            tool_name = func.get("name", "")
+            tool_args = func.get("arguments", {})
+
+            # Update status
+            friendly = tool_name.replace("get_", "").replace("_", " ").title()
+            status_cb(f"Checking {friendly}...")
+
+            result = execute_tool(tool_name, tool_args)
+
+            # Append tool response
+            messages.append({
+                "role": "tool",
+                "content": json.dumps(result),
+            })
+
+    raise RuntimeError("AI exceeded maximum tool-calling rounds without producing a final answer.")
+
+
+# ---------------------------------------------------------------------------
+# JSON parsing — robust brace-counting extractor
+# ---------------------------------------------------------------------------
+
+def _extract_outermost_json(text: str) -> str:
+    """Walk the string and find the first balanced { … } block."""
+    start = text.find("{")
+    if start == -1:
+        raise ValueError("No JSON object found in AI response.")
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if escape:
+            escape = False
+            continue
+        if ch == '\\':
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if in_string:
+            continue
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                return text[start:i + 1]
+
+    raise ValueError("Unbalanced braces in AI response JSON.")
+
+
+def _parse_response(raw_text: str) -> dict:
+    """Parse the AI's raw text into a validated steps dict."""
+    json_str = _extract_outermost_json(raw_text)
+    data = json.loads(json_str)
+
+    if "steps" not in data or not isinstance(data["steps"], list):
+        raise ValueError("AI response JSON missing 'steps' array.")
+
+    # Ensure summary field exists
+    if "summary" not in data or not data["summary"]:
+        data["summary"] = f"{len(data['steps'])} steps ready — see below!"
+
+    # Ensure youtube_search_query exists at the root
+    if "youtube_search_query" not in data:
+        data["youtube_search_query"] = ""
+
+    # Validate each step minimally
+    for step in data["steps"]:
+        if "instruction" not in step:
+            step["instruction"] = step.get("text", "(no instruction)")
+        if "description" not in step:
+            step["description"] = ""
+        if "index" not in step:
+            step["index"] = data["steps"].index(step) + 1
+
+    return data
+
