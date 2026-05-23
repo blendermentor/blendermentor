@@ -13,22 +13,22 @@
   - **Level 2**: Points out specific tab icons (e.g., Modifiers, Render).
   - **Level 3**: Pinpoints specific panels or buttons with visual indicators.
 - **Flexible UI Layouts**: Use it in the Sidebar, pop it out into a floating window for dual-monitor setups, or dock it as a split area in your workspace.
-- **Privacy & Control**: Uses your own API keys for **Gemini**, **Claude**, or **OpenAI**. Supports **Ollama** for running models locally with 100% privacy. No hardcoded models — the list is fetched live from the providers.
+- **Privacy & Control**: Uses your own API keys for **Gemini** or **Claude**. Supports **Ollama** for running open-source models locally with 100% privacy. No hardcoded models — the list is fetched live from the providers.
 
 ---
 
 ## 🚀 Getting Started
 
-### Installation
+## Installation
 
 1. Download the latest `blendermentor_addon.zip` from the [Releases](https://github.com/blendermentor/blendermentor/releases) page.
-2. In Blender, go to `Edit > Preferences > Add-ons`.
-3. Click **Install...** and select the `blendermentor_addon.zip` file.
-4. Enable the **BlenderMentor** add-on.
+2. In Blender, go to `Edit > Preferences > Get Extensions`.
+3. Click the **cog/gear icon** in the top-right corner of the preferences window and select **Install from Disk...**
+4. Select the `blendermentor_addon.zip` file and confirm installation.
 
 ### API Configuration
 
-1. In the Add-on preferences, choose your preferred provider (**Gemini**, **Claude**, **OpenAI**, or **Ollama**).
+1. In the Add-on preferences (accessible via `Edit > Preferences > Add-ons` or your installed extensions details panel), choose your preferred provider (**Gemini**, **Claude**, or **Ollama**).
 2. Enter your API Key (or host address for Ollama).
 3. Click **Fetch Models** to populate the model list.
 4. Select your desired model and click **Test Connection** to verify.
@@ -38,10 +38,14 @@
 ## 🛠 Usage
 
 1. Open the **BlenderMentor** tab in the 3D Viewport Sidebar (press `N` to toggle).
-2. Type your question (e.g., "How do I add a bevel to this cube?") and press **Send**.
-3. The AI will respond with a friendly summary and a list of steps.
-4. Click **Next** to move through the steps. Watch as Blender highlights the exact UI elements you need to interact with.
-5. If you're stuck, click the **Ask ❓** button on any step to ask a follow-up question specifically about that instruction.
+2. Type your question (e.g., "How do I add a bevel to this cube?") and press **Send** (or press **Enter**).
+3. The AI will respond with a friendly one-liner summary and a comprehensive list of steps.
+4. Interact with the Guided Steps panel:
+   *   **Click-Anywhere Selection**: Click directly on any step box (the instruction or explanation text) to instantly focus it and trigger its visual highlight overlay.
+   *   **Highlight Re-trigger**: Click the lightbulb (`'LIGHT'`) icon next to a step header to replay its highlight animation at any time.
+   *   **Top-Row Navigation**: Use the arrow navigators (`'TRIA_LEFT'` and `'TRIA_RIGHT'`) at the top of the panel to step through sequentially.
+   *   **YouTube Search**: Click the Globe (`'URL'`) icon in the top progress bar to immediately launch an optimized YouTube tutorial search in your external web browser.
+5. If you're stuck, click the **Ask ❓** button next to any step's instruction to ask a follow-up question specifically about that part of the process.
 
 ---
 
