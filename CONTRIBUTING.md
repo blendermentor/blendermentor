@@ -24,7 +24,7 @@ First off, thank you for considering contributing to BlenderMentor! It's people 
 ## 🛠 Development Workflow
 
 ### Requirements
-- **Blender 4.0 or newer**.
+- **Blender 4.2 or newer** is highly recommended (required for modern Extensions platform testing), but backwards-compatible down to **Blender 4.0+**.
 - No external Python packages are allowed (we use only Blender's bundled Python and standard library).
 
 ### Code Style
