@@ -19,6 +19,8 @@
 
 ## 🚀 Getting Started
 
+> 💡 **For full, detailed setup, key features, and troubleshooting instructions, please read our [Installation and Usage Guide](INSTRUCTIONS.md).**
+
 ## Installation
 
 1. Download the latest `blendermentor_addon.zip` from the [Releases](https://github.com/blendermentor/blendermentor/releases) page.
