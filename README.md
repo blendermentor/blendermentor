@@ -1,73 +1,108 @@
 # BlenderMentor
+![Installation](images/LogoType.png)
 
-**BlenderMentor** is a self-contained Blender add-on that provides an AI-powered chat interface directly inside Blender. It acts as an expert teacher, guiding you through complex workflows by highlighting relevant UI elements in real-time, ensuring you learn *how* to use the software rather than just having it done for you.
+# 📖 Installation and Usage Instructions
 
----
-
-## 🌟 Key Features
-
-- **Context-Aware AI Chat**: Integrated directly into the Blender N-panel. The AI reads your current scene state (active objects, materials, modifiers, etc.) to provide tailored advice.
-- **Guided Step-by-Step Navigation**: Complex procedures are broken down into digestible steps. Navigate through instructions at your own pace with a dedicated step-by-step UI.
-- **Dynamic UI Highlighting**: The AI doesn't just tell you where to go; it shows you. 
-  - **Level 1**: Highlights entire Editor areas.
-  - **Level 2**: Points out specific tab icons (e.g., Modifiers, Render).
-  - **Level 3**: Pinpoints specific panels or buttons with visual indicators.
-- **Flexible UI Layouts**: Use it in the Sidebar, pop it out into a floating window for dual-monitor setups, or dock it as a split area in your workspace.
-- **Privacy & Control**: Uses your own API keys for **Gemini** or **Claude**. Supports **Ollama** for running open-source models locally with 100% privacy. No hardcoded models — the list is fetched live from the providers.
+Welcome to **BlenderMentor**! This guide provides comprehensive, step-by-step instructions on how to install, configure, and get the most out of your AI-powered teaching assistant directly inside Blender.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Part 1: Installation & Setup
 
-> 💡 **For full, detailed setup, key features, and troubleshooting instructions, please read our [Installation and Usage Guide](INSTRUCTIONS.md).**
+BlenderMentor is fully compliant with the modern **Blender 4.2+ Extensions system**. Follow these steps to install and enable it.
 
-## Installation
+### Step 1: Download the Add-on
+*   Download the latest `blendermentor_addon.zip` package from our [Releases page](https://github.com/blendermentor/blendermentor/releases). 
+*   *Note: Do not unzip the package; keep it as a `.zip` file.*
 
-1. Download the latest `blendermentor_addon.zip` from the [Releases](https://github.com/blendermentor/blendermentor/releases) page.
-2. In Blender, go to `Edit > Preferences > Get Extensions`.
-3. Click the **cog/gear icon** in the top-right corner of the preferences window and select **Install from Disk...**
-4. Select the `blendermentor_addon.zip` file and confirm installation.
+### Step 2: Access Blender Preferences
+*   Launch Blender.
+*   In the top-left menu bar, go to **Edit ➔ Preferences...**
+*   A separate Preferences window will open.
 
-### API Configuration
+### Step 3: Install the Add-on
+![Installation](images/Installation.png)
+*   On the left sidebar of the Preferences window, select the **Get Extensions** tab.
+*   In the top-right header of the Preferences window, click the **cog/gear icon** to open the repository settings.
+*   Select **Install from Disk...** from the dropdown menu.
+*   Navigate to your downloads, select `blendermentor_addon.zip`, and click **Install**.
+*   Blender will extract the extension, register it in your local `"User Default"` repository, and enable it automatically.
 
-1. In the Add-on preferences (accessible via `Edit > Preferences > Add-ons` or your installed extensions details panel), choose your preferred provider (**Gemini**, **Claude**, or **Ollama**).
-2. Enter your API Key (or host address for Ollama).
-3. Click **Fetch Models** to populate the model list.
-4. Select your desired model and click **Test Connection** to verify.
+### Step 4: Generate your AI API Key (Google Gemini Example)
+![API Setup](images/api.png)
+BlenderMentor runs locally and requires no registration on our end—you bring your own API keys. Google Gemini offers a highly accurate and generous free tier for developers:
+*   Go to [Google AI Studio](https://aistudio.google.com).
+*   Log in with your standard Google account.
+*   Click the prominent **Get API Key** button in the top sidebar.
+*   Click **Create API Key**, search for/select a project, and copy your newly generated key.
 
----
-
-## 🛠 Usage
-
-1. Open the **BlenderMentor** tab in the 3D Viewport Sidebar (press `N` to toggle).
-2. Type your question (e.g., "How do I add a bevel to this cube?") and press **Send** (or press **Enter**).
-3. The AI will respond with a friendly one-liner summary and a comprehensive list of steps.
-4. Interact with the Guided Steps panel:
-   *   **Click-Anywhere Selection**: Click directly on any step box (the instruction or explanation text) to instantly focus it and trigger its visual highlight overlay.
-   *   **Highlight Re-trigger**: Click the lightbulb (`'LIGHT'`) icon next to a step header to replay its highlight animation at any time.
-   *   **Top-Row Navigation**: Use the arrow navigators (`'TRIA_LEFT'` and `'TRIA_RIGHT'`) at the top of the panel to step through sequentially.
-   *   **YouTube Search**: Click the Globe (`'URL'`) icon in the top progress bar to immediately launch an optimized YouTube tutorial search in your external web browser.
-5. If you're stuck, click the **Ask ❓** button next to any step's instruction to ask a follow-up question specifically about that part of the process.
-
----
-
-## 🏗 Architecture
-
-BlenderMentor is built with a focus on being lightweight and self-contained:
-
-- **Logic**: Pure Python using Blender's `bpy` and `gpu` modules.
-- **Networking**: Built-in `urllib` for API calls — no external dependencies or `pip` required.
-- **Drawing**: GPU-accelerated highlight overlays using the `gpu` module (Blender 4.0+ compatible).
-- **State Management**: Scene-level properties that persist with your `.blend` file.
+### Step 5: Configure the Add-on Preferences
+![Plugin Setup](images/setup.png)
+*   Back in Blender Preferences, select the **Get Extensions** tab (or **Add-ons** tab).
+*   Locate **BlenderMentor** and click the small arrow next to its name to expand the details and settings panel.
+*   Set **AI Provider** to **Gemini**.
+*   Paste your copied key into the **API Key** field (the key is hidden as a password field for security).
+*   Click **Fetch Models** (the file folder refresh icon). BlenderMentor will connect to the API, retrieve the active list of Gemini models, and populate the dropdown.
+*   Select your preferred model (e.g., `gemini-2.5-flash`).
+*   Click **Test Connection** (the checkmark icon) to confirm the key is active and working. You will see a success message (`✓ Gemini connection successful!`).
 
 ---
 
-## 🧑‍💻 Developer Tools
+## 🛠 Part 2: How to Use BlenderMentor
 
-Enable **Developer Mode** in preferences to access built-in debugging tools:
-- **Highlight Tester**: Manually trigger any UI highlight target.
-- **Context Inspector**: View the raw JSON data being sent to the AI.
-- **Mock Step Tester**: Test navigation UI without consuming API credits.
+Once configured, BlenderMentor lives in your 3D Viewport sidebar and is ready to teach you.
+
+### Step 1: Open the Chat Panel
+*   Hover your mouse over the main **3D Viewport**.
+*   Press **`N`** on your keyboard to open the Sidebar panel on the right.
+*   Select the **BlenderMentor** tab.
+
+### Step 2: Ask a Question
+![Asking questions](images/usage_01.png)
+*   Type a question in the input field at the bottom of the panel (e.g., *"How do I add a subdiv modifier to my active mesh?"*).
+*   Click the **Send** button (the Play icon) or press **Enter** to submit your query.
+
+---
+
+## 🌐 Troubleshooting: Internet Access Errors
+
+Because Blender 4.2+ enforces strict system security, your addon might occasionally show an error banner when you try to submit a question:
+> `⚠ Internet access is disabled in Blender's System Preferences (Allow Internet Access).`
+![Asking questions](images/Error_net.png)
+
+### Why does this happen?
+Blender has a global safety toggle designed to prevent extensions from connecting to the internet without your knowledge. BlenderMentor strictly respects this preference and will block all API calls if it is turned off.
+
+### How to Fix It:
+![Asking questions](images/Solution_net.png)
+*   Go to **Edit ➔ Preferences...**
+*   Select the **System** tab on the left sidebar.
+*   Scroll down to the **Network** section.
+*   Check the box to enable **Allow Internet Access**.
+*   Close the preferences. You can now immediately send your questions successfully!
+
+---
+
+## 🎯 Part 3: Navigating Step-by-Step Guidance
+
+When BlenderMentor responds, it won't just dump text in your face—it builds a structured learning path specifically for your scene.
+![Asking questions](images/usage_02.png)
+### 1. Step-by-Step Response List
+The panel renders a list of clear, single-action instructions. Click any step block directly to make it active.
+
+### 2. UI Highlighting & the Lightbulb Icon (`'LIGHT'`)
+*   Selecting a step automatically triggers a **visual colored outline** over the exact Blender editor, navigation tab, or button panel you need to interact with.
+*   If the highlight fades or you need to see it again, click the **Lightbulb (`'LIGHT'`)** icon in the header of the active step to re-trigger the glow animation.
+
+### 3. Asking Follow-Up Questions (`Ask ❓`)
+*   If a specific step is confusing (e.g., you don't understand *why* you are adding a material, or a button is named differently on your screen), click the **Ask ❓** button right next to that step.
+*   Type your question. The AI will receive the exact context of your current steps and answer your question directly in the chat, updating your guide seamlessly.
+
+### 4. Searching YouTube Tutorials (`'URL'`)
+*   Often, seeing a workflow in a video makes it click. If the AI detects a good fit for video learning, a **Globe (`'URL'`)** icon appears in the top navigation row.
+*   Hover over the Globe to see the tooltip *"Search YouTube Tutorials"*.
+*   Clicking it immediately opens your default browser with an AI-optimized search query focused exactly on your task, getting you high-quality video tutorials instantly.
+
 
 ---
 
