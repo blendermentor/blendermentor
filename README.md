@@ -1,6 +1,8 @@
 # BlenderMentor
 ![Installation](images/LogoType.png)
 
+> ⚠️ This is a small side project, vibe coded after work hours, and very much a work in progress, and prone to break easily. Licensed under **GPL v3**.
+
 # 📖 Installation and Usage Instructions
 
 Welcome to **BlenderMentor**! This guide provides comprehensive, step-by-step instructions on how to install, configure, and get the most out of your AI-powered teaching assistant directly inside Blender.
