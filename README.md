@@ -112,7 +112,7 @@ The panel renders a list of clear, single-action instructions. Click any step bl
 
 **BlenderMentor** was originally created by [bijuneyyan](https://www.bijuneyyan.com). 
 
-Contributions are welcome! If you'd like to help improve the project, please check out our [Contributing Guide](CONTRIBUTING.md) for details on how to get started, our development workflow, and coding standards.
+Contributions are welcome! If you'd like to help improve the project, please check out the [Contributing Guide](CONTRIBUTING.md) for details on how to get started with your contributions.
 
 ## 🛡 Privacy
 
