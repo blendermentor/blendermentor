@@ -114,6 +114,14 @@ The panel renders a list of clear, single-action instructions. Click any step bl
 
 Contributions are welcome! If you'd like to help improve the project, please check out the [Contributing Guide](CONTRIBUTING.md) for details on how to get started with your contributions.
 
+### Join the Community on Discord
+
+- Have a question, a feature idea, or just want to chat about Blender?
+- Come hang out on the [BlenderMentor Discord](https://discord.gg/5SqGztNKu)
+- You may suggest features, report issues, and possibly connect with others who are learning Blender.
+
+---
+
 ## 🛡 Privacy
 
 Your privacy is important. BlenderMentor is designed to be as transparent as possible:
