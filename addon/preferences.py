@@ -336,8 +336,8 @@ class BlenderMentorPreferences(bpy.types.AddonPreferences):
         layout.separator()
         box = layout.box()
         box.label(text="Advanced Settings", icon='PREFERENCES')
-        box.prop(self, "developer_mode", icon='TOOL_SETTINGS')
-        box.prop(self, "allow_python_eval", icon='CONSOLE')
+        box.prop(self, "developer_mode")
+        box.prop(self, "allow_python_eval")
 
 
 # ---------------------------------------------------------------------------
