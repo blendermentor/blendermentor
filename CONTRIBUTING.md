@@ -46,5 +46,13 @@ If you are adding support for new UI highlights:
 
 ---
 
+### Feature suggestions?, Join community on Discord
+
+- Have a question, a feature idea, or just want to chat about Blender?
+- Come hang out on the [BlenderMentor Discord](https://discord.gg/5SqGztNKu)
+- You may suggest features, report issues, and possibly connect with others who are learning Blender.
+
+---
+
 ## 📄 License
 By contributing to BlenderMentor, you agree that your contributions will be licensed under the **GPL v3** License.
