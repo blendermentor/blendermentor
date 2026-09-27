@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# BlenderMentor — Extension Manifest for Blender 4.2+
+
+schema_version = "1.0.0"
+id = "blendermentor"
+version = "0.4.0"
+name = "BlenderMentor"
+tagline = "AI-powered teaching assistant that guides you through Blender step-by-step"
+maintainer = "BlenderMentor Contributors"
+type = "add-on"
+
+license = [
+    "SPDX:GPL-3.0-or-later"
+]
+
+website = "https://github.com/blendermentor/blendermentor"
+
+# Modern extensions require 4.2.0 or higher
+blender_version_min = "4.2.0"
+
+# Declaring required system permissions as per Blender guidelines
+[permissions]
+network = "Required to connect to AI provider APIs (Gemini/Claude) and local Ollama servers"
