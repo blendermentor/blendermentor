@@ -852,17 +852,11 @@ class BLENDERMENTOR_PT_steps(bpy.types.Panel):
             step_box = layout.box()
             step_box.active = True
 
-            # Header row: static label + visual icon badge + optional lightbulb + ask follow-up button
+            # Header row: static label + optional lightbulb + ask follow-up button
             header = step_box.row(align=True)
             
             # Static step label
             header.label(text=f"Step {i + 1}", icon=icon)
-
-            # Prominent visual icon badge
-            if step.icon and step.icon != "NONE":
-                icon_badge = header.row(align=True)
-                icon_badge.alignment = 'LEFT'
-                icon_badge.label(text=f"[{step.icon}]", icon=step.icon)
 
             # Dedicated highlight re-trigger button (if a highlight target is available)
             if step.highlight_json:
