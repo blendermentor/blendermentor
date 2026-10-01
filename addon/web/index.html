@@ -697,6 +697,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
     let ttsEnabled = false;
     let lastSpokenStep = -1;
+    let isInitialLoad = true;
 
     // Elements
     const chatFeed = document.getElementById("chatFeed");
@@ -741,6 +742,17 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         thinkingBanner.style.display = "none";
       }
 
+      // Check for new AI message in chat history
+      let newAiResponseText = null;
+      if (!isInitialLoad && data.chat_history && data.chat_history.length > appState.chat_history.length) {
+        for (let i = appState.chat_history.length; i < data.chat_history.length; i++) {
+          const msg = data.chat_history[i];
+          if (msg && !msg.is_user && msg.text) {
+            newAiResponseText = msg.text;
+          }
+        }
+      }
+
       // 2. Chat history sync
       if (data.chat_history && data.chat_history.length !== appState.chat_history.length) {
         renderChat(data.chat_history);
@@ -762,8 +774,17 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
       if (stepsChanged || stepIdxChanged) {
         renderSteps(data.steps, data.current_step);
-        // Optional TTS read-aloud
-        if (ttsEnabled && data.steps.length > 0 && data.current_step !== lastSpokenStep) {
+      }
+
+      // TTS Read-aloud: AI conversational response first, then Step 1; or regular step transition
+      if (ttsEnabled) {
+        if (newAiResponseText) {
+          // A fresh AI response arrived in conversation: read it out first, then Step 1
+          const firstStep = (data.steps && data.steps.length > 0) ? data.steps[0] : null;
+          speakAiResponseThenStep(newAiResponseText, firstStep, 0);
+          lastSpokenStep = 0;
+        } else if ((stepsChanged || stepIdxChanged) && data.steps && data.steps.length > 0 && data.current_step !== lastSpokenStep) {
+          // User navigating between steps (Next / Prev / Card click)
           speakStep(data.steps[data.current_step], data.current_step);
           lastSpokenStep = data.current_step;
         }
@@ -781,6 +802,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       }
 
       appState = data;
+      isInitialLoad = false;
     }
 
     function renderChat(messages) {
@@ -1277,6 +1299,54 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       };
     }
 
+    function cleanSpeechText(text) {
+      if (!text) return "";
+      return text
+        .replace(/^[💡✨🔍❓⚠️❌📚🎯\s]+/, '') // strip leading decorative icons
+        .replace(/\[Re:\s*Step\s*\d+\]/gi, '') // strip follow-up reference headers
+        .trim();
+    }
+
+    function speakAiResponseThenStep(aiText, step, idx) {
+      if (!window.speechSynthesis) return;
+      window.speechSynthesis.cancel();
+
+      if (!selectedVoice && availableVoices.length > 0) {
+        selectedVoice = availableVoices[0];
+      }
+
+      const cleanAi = cleanSpeechText(aiText);
+      if (!cleanAi) {
+        if (step) speakStep(step, idx);
+        return;
+      }
+
+      // 1. Speak the conversational summary response from the mentor
+      const utterAi = new SpeechSynthesisUtterance(cleanAi);
+      if (selectedVoice) {
+        utterAi.voice = selectedVoice;
+      }
+      utterAi.rate = 0.98;
+      utterAi.pitch = 1.0;
+
+      // 2. Once the mentor finish speaking the conversational response, speak Step 1
+      if (step) {
+        utterAi.onend = () => {
+          if (!ttsEnabled) return;
+          const stepText = `Step ${idx + 1}: ${cleanSpeechText(step.instruction)}`;
+          const utterStep = new SpeechSynthesisUtterance(stepText);
+          if (selectedVoice) {
+            utterStep.voice = selectedVoice;
+          }
+          utterStep.rate = 0.98;
+          utterStep.pitch = 1.0;
+          window.speechSynthesis.speak(utterStep);
+        };
+      }
+
+      window.speechSynthesis.speak(utterAi);
+    }
+
     function speakStep(step, idx) {
       if (!window.speechSynthesis || !step) return;
       window.speechSynthesis.cancel();
@@ -1285,7 +1355,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         selectedVoice = availableVoices[0];
       }
 
-      const textToSpeak = `Step ${idx + 1}: ${step.instruction}`;
+      const textToSpeak = `Step ${idx + 1}: ${cleanSpeechText(step.instruction)}`;
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
       if (selectedVoice) {
         utterance.voice = selectedVoice;
