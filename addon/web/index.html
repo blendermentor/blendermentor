@@ -695,14 +695,27 @@
 
     async function sendChat(msg) {
       if (!msg || !msg.trim()) return;
+      const text = msg.trim();
+      
+      // Instant visual feedback: add bubble to feed immediately
+      const bubble = document.createElement("div");
+      bubble.className = "chat-bubble user";
+      bubble.innerHTML = `<div class="chat-bubble-author">You</div><div>${text}</div>`;
+      chatFeed.appendChild(bubble);
+      chatFeed.scrollTop = chatFeed.scrollHeight;
+
+      // Show thinking indicator right away
+      thinkingBanner.style.display = "flex";
+      thinkingText.textContent = "Mentor is reasoning...";
+
       chatInput.value = "";
       try {
         await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: msg.trim() })
+          body: JSON.stringify({ message: text })
         });
-        fetchState();
+        setTimeout(fetchState, 300);
       } catch (err) {
         console.error("Error sending message:", err);
       }
@@ -755,15 +768,22 @@
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (SpeechRecognition) {
       const recognition = new SpeechRecognition();
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.lang = "en-US";
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = navigator.language || "en-US";
+      recognition.maxAlternatives = 1;
 
       let isListening = false;
+      let finalTranscript = "";
 
       btnMic.onclick = () => {
         if (!isListening) {
-          recognition.start();
+          try {
+            finalTranscript = chatInput.value ? chatInput.value.trim() + " " : "";
+            recognition.start();
+          } catch (e) {
+            console.warn("Recognition already active", e);
+          }
         } else {
           recognition.stop();
         }
@@ -772,23 +792,45 @@
       recognition.onstart = () => {
         isListening = true;
         btnMic.classList.add("listening");
-        chatInput.placeholder = "Listening... speak now";
+        btnMic.title = "Listening... click to stop";
+        chatInput.placeholder = "🎙️ Listening... speak now";
       };
 
       recognition.onresult = (event) => {
-        const transcript = event.results[0][0].transcript;
-        chatInput.value = transcript;
-        sendChat(transcript);
+        let interim = "";
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          const res = event.results[i];
+          if (res.isFinal) {
+            finalTranscript += res[0].transcript + " ";
+          } else {
+            interim += res[0].transcript;
+          }
+        }
+        chatInput.value = (finalTranscript + interim).trim();
       };
 
       recognition.onerror = (event) => {
         console.error("Speech recognition error:", event.error);
+        if (event.error === "no-speech") {
+          chatInput.placeholder = "No speech detected. Click mic to try again.";
+        } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+          chatInput.placeholder = "Microphone access blocked. Allow mic in browser settings.";
+        } else if (event.error === "network") {
+          chatInput.placeholder = "Speech recognition network error (check connection).";
+        } else {
+          chatInput.placeholder = `Speech error: ${event.error}`;
+        }
       };
 
       recognition.onend = () => {
         isListening = false;
         btnMic.classList.remove("listening");
-        chatInput.placeholder = "Ask a question or request guidance...";
+        btnMic.title = "Click to speak (Voice Input)";
+        if (!chatInput.value.trim()) {
+          chatInput.placeholder = "Ask a question or request guidance...";
+        } else {
+          chatInput.focus();
+        }
       };
     } else {
       btnMic.style.display = "none";
