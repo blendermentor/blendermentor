@@ -105,6 +105,149 @@ def _poll_worker_done():
     return None  # unregister timer
 
 
+_VALID_BLENDER_ICONS = None
+
+ICON_ALIASES = {
+    # Modifiers & Tools
+    "wrench": "MODIFIER",
+    "modifier": "MODIFIER",
+    "modifiers": "MODIFIER",
+    "subsurf": "MOD_SUBSURF",
+    "subdivision": "MOD_SUBSURF",
+    "subdivision_surface": "MOD_SUBSURF",
+    "bevel": "MOD_BEVEL",
+    "mirror": "MOD_MIRROR",
+    "boolean": "MOD_BOOLEAN",
+    "array": "MOD_ARRAY",
+    "solidify": "MOD_SOLIDIFY",
+    "smooth": "MOD_SMOOTH",
+    "decimate": "MOD_DECIM",
+    "armature": "MOD_ARMATURE",
+    "curve": "MOD_CURVE",
+    "shrinkwrap": "MOD_SHRINKWRAP",
+    "lattice": "MOD_LATTICE",
+    "simple_deform": "MOD_SIMPLEDEFORM",
+
+    # Properties & Editors
+    "material": "MATERIAL",
+    "materials": "MATERIAL",
+    "texture": "TEXTURE",
+    "render": "RENDER_RESULT",
+    "render_settings": "RESTRICT_RENDER_OFF",
+    "output": "OUTPUT",
+    "output_settings": "OUTPUT",
+    "world": "WORLD",
+    "scene": "SCENE_DATA",
+    "collection": "OUTLINER_COLLECTION",
+    "outliner": "OUTLINER",
+    "timeline": "TIME",
+    "dopesheet": "ACTION",
+    "graph_editor": "GRAPH",
+    "shader_editor": "NODE",
+    "compositor": "NODE_COMPOSITING",
+    "properties": "PROPERTIES",
+    "viewport": "VIEW3D",
+    "3d_viewport": "VIEW3D",
+
+    # Modes & Object Types
+    "edit_mode": "EDITMODE_HLT",
+    "edit": "EDITMODE_HLT",
+    "object_mode": "OBJECT_DATAMODE",
+    "object": "OBJECT_DATAMODE",
+    "sculpt_mode": "SCULPTMODE_HLT",
+    "sculpt": "SCULPTMODE_HLT",
+    "pose_mode": "POSE_HLT",
+    "camera": "CAMERA_DATA",
+    "light": "LIGHT_DATA",
+    "lamp": "LIGHT_DATA",
+    "sun": "LIGHT_SUN",
+    "mesh": "MESH_DATA",
+    "cube": "MESH_CUBE",
+    "sphere": "MESH_UVSPHERE",
+    "cylinder": "MESH_CYLINDER",
+    "plane": "MESH_PLANE",
+    "monkey": "MONKEY",
+    "suzanne": "MONKEY",
+
+    # Actions & Menus
+    "add": "ADD",
+    "shift_a": "ADD",
+    "select": "RESTRICT_SELECT_OFF",
+    "select_all": "SELECT_SET",
+    "delete": "TRASH",
+    "remove": "TRASH",
+    "undo": "LOOP_BACK",
+    "redo": "LOOP_FORWARDS",
+    "save": "FILE_TICK",
+    "open": "FILE_FOLDER",
+    "zoom": "VIEW_ZOOM",
+    "pan": "VIEW_PAN",
+    "hide": "HIDE_ON",
+    "unhide": "HIDE_OFF",
+    "keyframe": "KEYFRAME",
+    "physics": "PHYSICS",
+    "particles": "PARTICLES",
+    "particle": "PARTICLES",
+    "constraints": "CONSTRAINT",
+    "constraint": "CONSTRAINT",
+    "bones": "BONE_DATA",
+    "cursor": "CURSOR",
+    "transform": "ORIENTATION_GLOBAL",
+    "move": "TRANSFORM_MOVE",
+    "rotate": "TRANSFORM_ROTATE",
+    "scale": "TRANSFORM_SCALE",
+}
+
+
+def _get_valid_blender_icons():
+    """Dynamically get all valid built-in icon enum identifiers in Blender."""
+    global _VALID_BLENDER_ICONS
+    if _VALID_BLENDER_ICONS is None:
+        try:
+            _VALID_BLENDER_ICONS = {
+                it.identifier
+                for it in bpy.types.UILayout.bl_rna.functions['label'].parameters['icon'].enum_items
+            }
+        except Exception:
+            _VALID_BLENDER_ICONS = set()
+    return _VALID_BLENDER_ICONS
+
+
+def _resolve_step_icon(raw_icon, highlight_data, instruction: str) -> str:
+    """Robustly resolve a step icon to a guaranteed valid Blender icon identifier."""
+    valid_icons = _get_valid_blender_icons()
+
+    # 1. Check explicit raw_icon from AI
+    if raw_icon and isinstance(raw_icon, str):
+        candidate = raw_icon.strip()
+        cand_upper = candidate.upper()
+        if cand_upper in valid_icons:
+            return cand_upper
+        alias = ICON_ALIASES.get(candidate.lower())
+        if alias and alias in valid_icons:
+            return alias
+
+    # 2. Check highlight target (e.g. target='modifiers' -> 'MODIFIER')
+    if highlight_data and isinstance(highlight_data, dict):
+        target = str(highlight_data.get("target", "")).lower()
+        if target:
+            alias = ICON_ALIASES.get(target)
+            if alias and alias in valid_icons:
+                return alias
+            if target.upper() in valid_icons:
+                return target.upper()
+
+    # 3. Keyword scan in instruction
+    if instruction:
+        inst_lower = instruction.lower()
+        for kw, icon_id in ICON_ALIASES.items():
+            if kw in inst_lower:
+                if icon_id in valid_icons:
+                    return icon_id
+
+    return "NONE"
+
+
 def _apply_ai_response(scene, response: dict):
     """Populate steps and chat from a successful AI response dict."""
     steps = response.get("steps", [])
@@ -119,6 +262,7 @@ def _apply_ai_response(scene, response: dict):
             s.is_done = False
             highlight = step_data.get("highlight")
             s.highlight_json = json.dumps(highlight) if highlight else ""
+            s.icon = _resolve_step_icon(step_data.get("icon"), highlight, s.instruction)
 
 
         scene.bm_current_step = 0
@@ -403,18 +547,23 @@ class BLENDERMENTOR_OT_load_mock_steps(bpy.types.Operator):
         mock = [
             {"instruction": "Look at the 3D Viewport",
              "description": "The 3D Viewport is the large central area where you can see and interact with your 3D objects. It usually takes up most of the Blender window.",
+             "icon": "VIEW3D",
              "highlight": {"level": "area", "space": "VIEW_3D", "target": "viewport"}},
             {"instruction": "Open the Properties editor",
              "description": "The Properties editor is usually on the right side of the screen. It has a vertical strip of icons (tabs) that let you access different settings.",
+             "icon": "PROPERTIES",
              "highlight": {"level": "area", "space": "PROPERTIES", "target": "properties"}},
             {"instruction": "Click the wrench icon (Modifiers tab)",
              "description": "The wrench icon is in the vertical icon strip of the Properties editor. It opens the Modifier Properties panel where you can add and manage modifiers.",
+             "icon": "MODIFIER",
              "highlight": {"level": "tab", "space": "PROPERTIES", "target": "modifiers"}},
             {"instruction": "Click 'Add Modifier'",
              "description": "The 'Add Modifier' dropdown button is at the top of the Modifiers panel. Clicking it reveals categories like Generate, Deform, and Physics.",
+             "icon": "ADD",
              "highlight": {"level": "panel", "space": "PROPERTIES", "target": "modifier_add_button"}},
             {"instruction": "Select Subdivision Surface from the menu",
              "description": "Subdivision Surface is inside the 'Generate' category. It smooths your mesh by subdividing its faces. Start with a viewport level of 1 or 2.",
+             "icon": "MOD_SUBSURF",
              "highlight": None},
         ]
 
@@ -425,6 +574,7 @@ class BLENDERMENTOR_OT_load_mock_steps(bpy.types.Operator):
             s.is_done = False
             h = step_data.get("highlight")
             s.highlight_json = json.dumps(h) if h else ""
+            s.icon = _resolve_step_icon(step_data.get("icon"), h, s.instruction)
 
         scene.bm_current_step = 0
         # Store mock response for follow-up testing
@@ -702,11 +852,17 @@ class BLENDERMENTOR_PT_steps(bpy.types.Panel):
             step_box = layout.box()
             step_box.active = True
 
-            # Header row: static label + optional lightbulb + ask follow-up button
+            # Header row: static label + visual icon badge + optional lightbulb + ask follow-up button
             header = step_box.row(align=True)
             
             # Static step label
             header.label(text=f"Step {i + 1}", icon=icon)
+
+            # Prominent visual icon badge
+            if step.icon and step.icon != "NONE":
+                icon_badge = header.row(align=True)
+                icon_badge.alignment = 'LEFT'
+                icon_badge.label(text=f"[{step.icon}]", icon=step.icon)
 
             # Dedicated highlight re-trigger button (if a highlight target is available)
             if step.highlight_json:
@@ -720,10 +876,12 @@ class BLENDERMENTOR_PT_steps(bpy.types.Panel):
             # Instruction text (wrapped in flat, left-aligned clickable buttons to activate/highlight step on click)
             col = step_box.column(align=True)
             lines = textwrap.wrap(step.instruction, width=max(20, char_width - 6))
-            for line in lines:
+            for line_idx, line in enumerate(lines):
                 row_line = col.row()
                 row_line.alignment = 'LEFT'
-                op = row_line.operator("blendermentor.step_goto", text=line, emboss=False)
+                # Display the visual Blender icon on the first instruction line!
+                display_icon = step.icon if (line_idx == 0 and step.icon and step.icon != "NONE") else 'NONE'
+                op = row_line.operator("blendermentor.step_goto", text=line, icon=display_icon, emboss=False)
                 op.step_index = i
 
             # Description text (dimmer, wrapped in flat, left-aligned clickable buttons)

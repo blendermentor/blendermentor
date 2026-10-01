@@ -17,6 +17,8 @@ class StepItem(bpy.types.PropertyGroup):
     is_done: bpy.props.BoolProperty(name="Done", default=False)
     # Highlight data stored as a JSON string (parsed at runtime)
     highlight_json: bpy.props.StringProperty(name="Highlight JSON", default="")
+    # Blender UI icon identifier (e.g. 'MODIFIER', 'MOD_SUBSURF', 'MATERIAL')
+    icon: bpy.props.StringProperty(name="Icon", default="NONE")
 
 
 

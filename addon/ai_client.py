@@ -33,6 +33,7 @@ Rules:
 4. Each step must have:
    - "instruction": a short, clear action (e.g. "Click Add Modifier")
    - "description": a brief helpful explanation with extra context (e.g. "The Add Modifier button is at the top of the Modifiers panel. It opens a dropdown with categories like Generate, Deform, and Physics.")
+   - "icon": an optional Blender UI icon name to visually represent the step (e.g. "MODIFIER" for the wrench, "MOD_SUBSURF", "MOD_BEVEL", "MATERIAL", "EDITMODE_HLT", "OBJECT_DATAMODE", "LIGHT_DATA", "CAMERA_DATA", "ADD", or null)
    - "highlight": which UI element to highlight (see format below), or null if none
 5. Use exact Blender UI names — panel labels, button text, menu paths.
 6. Keep each step focused on one action only.
@@ -132,7 +133,7 @@ EXAMPLES of correct highlight usage:
     CORRECT:   {"level": "area", "space": "OUTLINER", "target": "outliner"}
 
 Response schema:
-{ "summary": "<friendly one-liner>", "youtube_search_query": "<string>", "steps": [ { "index": <int>, "instruction": "<string>", "description": "<string>", "highlight": <object|null> } ] }
+{ "summary": "<friendly one-liner>", "youtube_search_query": "<string>", "steps": [ { "index": <int>, "instruction": "<string>", "description": "<string>", "icon": "<string|null>", "highlight": <object|null> } ] }
 """
 
 
