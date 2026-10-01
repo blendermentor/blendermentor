@@ -567,6 +567,28 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       font-size: 48px;
       opacity: 0.4;
     }
+
+    .voice-select {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 10px;
+      border-radius: var(--radius);
+      font-size: 12px;
+      outline: none;
+      cursor: pointer;
+      max-width: 175px;
+      text-overflow: ellipsis;
+      transition: border-color 0.15s, background-color 0.15s;
+    }
+
+    .voice-select:hover {
+      border-color: #666;
+    }
+
+    .voice-select:focus {
+      border-color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -587,6 +609,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       <button id="btnTts" title="Toggle audio step read-aloud">
         <span>🔊</span> Voice Readout
       </button>
+      <select id="voiceSelect" class="voice-select" title="Choose high-quality speech voice"></select>
       <button id="btnClear" title="Clear conversation and steps">
         <span>🗑️</span> Clear
       </button>
@@ -1170,13 +1193,105 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       btnMic.style.display = "none";
     }
 
-    // Text-to-Speech (TTS)
+    // High-Quality Text-to-Speech (TTS)
+    let availableVoices = [];
+    let selectedVoice = null;
+    const voiceSelect = document.getElementById("voiceSelect");
+
+    function populateVoiceList() {
+      if (!window.speechSynthesis) return;
+      const allVoices = window.speechSynthesis.getVoices();
+      if (!allVoices || allVoices.length === 0) return;
+
+      // Filter to English voices (mentor instructions are in English)
+      availableVoices = allVoices.filter(v => (v.lang && v.lang.toLowerCase().startsWith("en")) || !v.lang);
+      if (availableVoices.length === 0) availableVoices = allVoices;
+
+      // Prioritize natural / enhanced neural voices
+      availableVoices.sort((a, b) => {
+        const score = (v) => {
+          let s = 0;
+          const name = (v.name || "").toLowerCase();
+          if (name.includes("natural")) s += 100;
+          if (name.includes("enhanced")) s += 90;
+          if (name.includes("premium")) s += 80;
+          if (name.includes("google")) s += 70;
+          if (name.includes("siri")) s += 60;
+          if (v.lang === "en-US") s += 20;
+          else if (v.lang && v.lang.startsWith("en")) s += 10;
+          // De-prioritize legacy novelty/robotic synthesizers
+          const legacyNovelty = ["fred", "albert", "bad news", "bahh", "bells", "boing", "bubbles", "cellos", "deranged", "good news", "hysterical", "pipe organ", "trinoids", "whisper", "zarvox", "junior", "ralph", "kathy", "vicki", "princess"];
+          if (legacyNovelty.some(n => name.includes(n))) s -= 80;
+          return s;
+        };
+        return score(b) - score(a);
+      });
+
+      if (voiceSelect) {
+        voiceSelect.innerHTML = "";
+        const savedVoiceURI = localStorage.getItem("blendermentor_voice_uri");
+        let matchedIdx = 0;
+
+        availableVoices.forEach((v, idx) => {
+          const opt = document.createElement("option");
+          opt.value = v.voiceURI;
+          let label = v.name;
+          if (v.name.includes("Enhanced") || v.name.includes("Natural")) {
+            label = `✨ ${label}`;
+          }
+          opt.textContent = label;
+          voiceSelect.appendChild(opt);
+
+          if (savedVoiceURI && (v.voiceURI === savedVoiceURI || v.name === savedVoiceURI)) {
+            matchedIdx = idx;
+          }
+        });
+
+        voiceSelect.selectedIndex = matchedIdx;
+        selectedVoice = availableVoices[matchedIdx] || availableVoices[0] || null;
+      }
+    }
+
+    if (window.speechSynthesis) {
+      populateVoiceList();
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = populateVoiceList;
+      }
+    }
+
+    if (voiceSelect) {
+      voiceSelect.onchange = () => {
+        const chosen = voiceSelect.value;
+        selectedVoice = availableVoices.find(v => v.voiceURI === chosen) || null;
+        if (selectedVoice) {
+          localStorage.setItem("blendermentor_voice_uri", selectedVoice.voiceURI);
+          if (ttsEnabled) {
+            window.speechSynthesis.cancel();
+            const preview = new SpeechSynthesisUtterance("Voice updated.");
+            preview.voice = selectedVoice;
+            preview.rate = 0.98;
+            preview.pitch = 1.0;
+            window.speechSynthesis.speak(preview);
+          }
+        }
+      };
+    }
+
     function speakStep(step, idx) {
       if (!window.speechSynthesis || !step) return;
       window.speechSynthesis.cancel();
+
+      if (!selectedVoice && availableVoices.length > 0) {
+        selectedVoice = availableVoices[0];
+      }
+
       const textToSpeak = `Step ${idx + 1}: ${step.instruction}`;
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
-      utterance.rate = 1.05;
+      if (selectedVoice) {
+        utterance.voice = selectedVoice;
+      }
+      utterance.rate = 0.98;   // Natural human conversational pace
+      utterance.pitch = 1.0;  // Balanced pitch
       window.speechSynthesis.speak(utterance);
     }
 
@@ -1185,6 +1300,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       btnTts.classList.toggle("active", ttsEnabled);
       if (ttsEnabled && appState.steps.length > 0) {
         speakStep(appState.steps[appState.current_step], appState.current_step);
+      } else {
+        window.speechSynthesis.cancel();
       }
     };
 
