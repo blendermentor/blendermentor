@@ -19,6 +19,7 @@ from . import preferences
 from .state import conversation
 from .ui import chat_panel
 from .ui import window_manager
+from . import server
 
 
 def register():
@@ -26,9 +27,11 @@ def register():
     preferences.register()
     window_manager.register()
     chat_panel.register()
+    server.start_server(port=8765)
 
 
 def unregister():
+    server.stop_server()
     chat_panel.unregister()
     window_manager.unregister()
     preferences.unregister()

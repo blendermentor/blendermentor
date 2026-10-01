@@ -1,0 +1,820 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BlenderMentor — Dual-Monitor Companion</title>
+  <style>
+    :root {
+      --bg-dark: #1e1e1e;
+      --bg-panel: #282828;
+      --bg-card: #323232;
+      --bg-card-active: #3c3c3c;
+      --border: #444444;
+      --border-focus: #555555;
+      --text-main: #e0e0e0;
+      --text-dim: #999999;
+      --accent: #4772b3;
+      --accent-hover: #5887cf;
+      --amber: #e69500;
+      --green: #4caf50;
+      --red: #f44336;
+      --radius: 8px;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* App Header */
+    header {
+      background-color: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      height: 52px;
+      flex-shrink: 0;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 600;
+      font-size: 16px;
+      letter-spacing: 0.5px;
+    }
+
+    .brand-icon {
+      font-size: 20px;
+    }
+
+    .status-badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background-color: #2a2a2a;
+      border: 1px solid var(--border);
+      color: var(--text-dim);
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--green);
+    }
+
+    .status-dot.disconnected {
+      background-color: var(--red);
+    }
+
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    button {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: background 0.15s, border-color 0.15s;
+    }
+
+    button:hover {
+      background-color: #3e3e3e;
+      border-color: var(--border-focus);
+    }
+
+    button:active {
+      transform: translateY(1px);
+    }
+
+    button.primary {
+      background-color: var(--accent);
+      border-color: var(--accent);
+      color: #ffffff;
+    }
+
+    button.primary:hover {
+      background-color: var(--accent-hover);
+    }
+
+    button.active {
+      background-color: rgba(230, 149, 0, 0.2);
+      border-color: var(--amber);
+      color: var(--amber);
+    }
+
+    /* Two-Column Workspace Layout */
+    .workspace {
+      display: grid;
+      grid-template-columns: 45% 55%;
+      flex: 1;
+      height: calc(100vh - 52px);
+      overflow: hidden;
+    }
+
+    /* Columns */
+    .col {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .col-chat {
+      border-right: 1px solid var(--border);
+      background-color: #212121;
+    }
+
+    .col-steps {
+      background-color: var(--bg-panel);
+    }
+
+    .col-header {
+      padding: 12px 18px;
+      background-color: var(--bg-panel);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+
+    .col-header-tools {
+      display: flex;
+      gap: 8px;
+    }
+
+    /* Left Column: Chat Feed */
+    .chat-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chat-bubble {
+      max-width: 85%;
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      line-height: 1.5;
+      word-break: break-word;
+      user-select: text;
+    }
+
+    .chat-bubble.user {
+      align-self: flex-end;
+      background-color: var(--accent);
+      color: #ffffff;
+      border-bottom-right-radius: 2px;
+    }
+
+    .chat-bubble.ai {
+      align-self: flex-start;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      border-bottom-left-radius: 2px;
+    }
+
+    .chat-bubble-author {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 4px;
+      color: var(--text-dim);
+    }
+
+    .chat-bubble.user .chat-bubble-author {
+      color: rgba(255, 255, 255, 0.7);
+    }
+
+    /* Thinking Status Bar */
+    .thinking-banner {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background-color: rgba(71, 114, 179, 0.15);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius);
+      font-size: 13px;
+      color: #92b8ff;
+      margin: 0 16px 12px 16px;
+      animation: pulse 1.5s infinite;
+    }
+
+    .thinking-spinner {
+      width: 14px;
+      height: 14px;
+      border: 2px solid #92b8ff;
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.6; }
+    }
+
+    /* Chat Input Bar */
+    .chat-input-bar {
+      padding: 12px 16px;
+      background-color: var(--bg-panel);
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .input-wrapper {
+      flex: 1;
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      background-color: var(--bg-dark);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      padding: 10px 14px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+
+    /* Mic Button */
+    .btn-mic {
+      padding: 9px 12px;
+      border-radius: var(--radius);
+    }
+
+    .btn-mic.listening {
+      background-color: var(--red);
+      border-color: var(--red);
+      color: #fff;
+      animation: pulse 1s infinite;
+    }
+
+    /* Right Column: Steps Navigator */
+    .steps-container {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .step-hero {
+      background-color: var(--bg-card-active);
+      border: 2px solid var(--amber);
+      border-radius: var(--radius);
+      padding: 16px;
+      margin-bottom: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    .step-hero-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--amber);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .step-hero-instruction {
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.4;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .step-hero-desc {
+      font-size: 13.5px;
+      line-height: 1.5;
+      color: #cccccc;
+    }
+
+    .step-tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background-color: rgba(255, 255, 255, 0.08);
+      border: 1px solid var(--border);
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      color: #bbbbbb;
+      font-family: monospace;
+    }
+
+    /* Step Card List */
+    .step-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: background 0.15s, border-color 0.15s, transform 0.1s;
+    }
+
+    .step-card:hover {
+      background-color: #383838;
+      border-color: #666666;
+    }
+
+    .step-card.active {
+      border-color: var(--amber);
+      background-color: rgba(230, 149, 0, 0.08);
+    }
+
+    .step-card-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+
+    .step-card.active .step-card-top {
+      color: var(--amber);
+    }
+
+    .step-card-instruction {
+      font-size: 14px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .step-icon-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(255, 255, 255, 0.1);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #ffd27f;
+    }
+
+    .empty-state {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text-dim);
+      text-align: center;
+      padding: 40px;
+    }
+
+    .empty-icon {
+      font-size: 48px;
+      opacity: 0.4;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header>
+    <div class="brand">
+      <span class="brand-icon">🎨</span>
+      <span>BlenderMentor Companion</span>
+    </div>
+
+    <div class="status-badge">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="sceneStatus">Connecting to Blender...</span>
+    </div>
+
+    <div class="header-actions">
+      <button id="btnTts" title="Toggle audio step read-aloud">
+        <span>🔊</span> Voice Readout
+      </button>
+      <button id="btnClear" title="Clear conversation and steps">
+        <span>🗑️</span> Clear
+      </button>
+    </div>
+  </header>
+
+  <!-- Dual-Column Workspace -->
+  <div class="workspace">
+
+    <!-- Column 1: Chat & Voice Interaction -->
+    <div class="col col-chat">
+      <div class="col-header">
+        <span>💬 Conversation & Guidance</span>
+        <span id="chatCount" class="step-tag">0 messages</span>
+      </div>
+
+      <div id="chatFeed" class="chat-scroll">
+        <div class="chat-bubble ai">
+          <div class="chat-bubble-author">BlenderMentor</div>
+          Hello! I am your companion tutor on your second screen. You can type or use your voice to ask anything about your Blender scene!
+        </div>
+      </div>
+
+      <div id="thinkingBanner" class="thinking-banner">
+        <div class="thinking-spinner"></div>
+        <span id="thinkingText">Mentor is thinking...</span>
+      </div>
+
+      <div class="chat-input-bar">
+        <button id="btnMic" class="btn-mic" title="Click to speak (Voice Input)">
+          <span>🎙️</span>
+        </button>
+        <div class="input-wrapper">
+          <input type="text" id="chatInput" placeholder="Ask a question or request guidance..." autocomplete="off" />
+        </div>
+        <button id="btnSend" class="primary">
+          <span>➤</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Column 2: Guided Steps & Visual Navigator -->
+    <div class="col col-steps">
+      <div class="col-header">
+        <span id="questTitle">🎯 Guided Steps</span>
+        <div class="col-header-tools">
+          <button id="btnPrev" title="Previous Step">◀ Prev</button>
+          <button id="btnNext" title="Next Step">Next ▶</button>
+          <button id="btnYoutube" style="display: none;" title="Search YouTube for this tutorial">
+            <span>▶</span> YouTube
+          </button>
+        </div>
+      </div>
+
+      <div id="stepsContainer" class="steps-container">
+        <div class="empty-state">
+          <div class="empty-icon">🧭</div>
+          <div style="font-size: 16px; font-weight: 600;">No active quest steps yet</div>
+          <div style="font-size: 13px; max-width: 320px;">
+            Ask a question in the chat column on the left (or speak via microphone) to generate step-by-step guidance!
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // State cache
+    let appState = {
+      chat_history: [],
+      steps: [],
+      current_step: 0,
+      is_processing: false,
+      status_message: "",
+      youtube_query: "",
+      active_object: null,
+      mode: "OBJECT"
+    };
+
+    let ttsEnabled = false;
+    let lastSpokenStep = -1;
+
+    // Elements
+    const chatFeed = document.getElementById("chatFeed");
+    const chatInput = document.getElementById("chatInput");
+    const btnSend = document.getElementById("btnSend");
+    const btnMic = document.getElementById("btnMic");
+    const btnClear = document.getElementById("btnClear");
+    const btnPrev = document.getElementById("btnPrev");
+    const btnNext = document.getElementById("btnNext");
+    const btnYoutube = document.getElementById("btnYoutube");
+    const btnTts = document.getElementById("btnTts");
+    const stepsContainer = document.getElementById("stepsContainer");
+    const thinkingBanner = document.getElementById("thinkingBanner");
+    const thinkingText = document.getElementById("thinkingText");
+    const statusDot = document.getElementById("statusDot");
+    const sceneStatus = document.getElementById("sceneStatus");
+    const chatCount = document.getElementById("chatCount");
+    const questTitle = document.getElementById("questTitle");
+
+    // Poll Blender state every 400ms
+    async function fetchState() {
+      try {
+        const res = await fetch("/api/state");
+        if (!res.ok) throw new Error("Server response not ok");
+        const data = await res.json();
+        updateUI(data);
+        statusDot.classList.remove("disconnected");
+        const objDesc = data.active_object ? `${data.active_object} (${data.mode})` : `No Selection (${data.mode})`;
+        sceneStatus.textContent = `Connected: ${objDesc}`;
+      } catch (err) {
+        statusDot.classList.add("disconnected");
+        sceneStatus.textContent = "Disconnected from Blender";
+      }
+    }
+
+    function updateUI(data) {
+      // 1. Thinking status
+      if (data.is_processing) {
+        thinkingBanner.style.display = "flex";
+        thinkingText.textContent = data.status_message || "Mentor is inspecting scene & reasoning...";
+      } else {
+        thinkingBanner.style.display = "none";
+      }
+
+      // 2. Chat history sync
+      if (data.chat_history && data.chat_history.length !== appState.chat_history.length) {
+        renderChat(data.chat_history);
+      }
+
+      // 3. YouTube button
+      if (data.youtube_query) {
+        btnYoutube.style.display = "inline-flex";
+        btnYoutube.onclick = () => {
+          window.open(`https://www.youtube.com/results?search_query=${encodeURIComponent(data.youtube_query)}`, "_blank");
+        };
+      } else {
+        btnYoutube.style.display = "none";
+      }
+
+      // 4. Steps sync
+      const stepsChanged = JSON.stringify(data.steps) !== JSON.stringify(appState.steps);
+      const stepIdxChanged = data.current_step !== appState.current_step;
+
+      if (stepsChanged || stepIdxChanged) {
+        renderSteps(data.steps, data.current_step);
+        // Optional TTS read-aloud
+        if (ttsEnabled && data.steps.length > 0 && data.current_step !== lastSpokenStep) {
+          speakStep(data.steps[data.current_step], data.current_step);
+          lastSpokenStep = data.current_step;
+        }
+      }
+
+      appState = data;
+    }
+
+    function renderChat(messages) {
+      chatFeed.innerHTML = "";
+      messages.forEach(msg => {
+        const bubble = document.createElement("div");
+        bubble.className = `chat-bubble ${msg.is_user ? "user" : "ai"}`;
+        
+        const author = document.createElement("div");
+        author.className = "chat-bubble-author";
+        author.textContent = msg.is_user ? "You" : "BlenderMentor";
+        
+        const text = document.createElement("div");
+        text.textContent = msg.text;
+
+        bubble.appendChild(author);
+        bubble.appendChild(text);
+        chatFeed.appendChild(bubble);
+      });
+      chatCount.textContent = `${messages.length} message(s)`;
+      chatFeed.scrollTop = chatFeed.scrollHeight;
+    }
+
+    function renderSteps(steps, currentIdx) {
+      if (!steps || steps.length === 0) {
+        stepsContainer.innerHTML = `
+          <div class="empty-state">
+            <div class="empty-icon">🧭</div>
+            <div style="font-size: 16px; font-weight: 600;">No active quest steps yet</div>
+            <div style="font-size: 13px; max-width: 320px;">
+              Ask a question in the chat column on the left (or speak via microphone) to generate step-by-step guidance!
+            </div>
+          </div>
+        `;
+        questTitle.textContent = "🎯 Guided Steps";
+        return;
+      }
+
+      questTitle.textContent = `🎯 Step ${currentIdx + 1} of ${steps.length}`;
+      stepsContainer.innerHTML = "";
+
+      // Hero Card for current active step
+      const current = steps[currentIdx];
+      if (current) {
+        const hero = document.createElement("div");
+        hero.className = "step-hero";
+        
+        const iconBadge = current.icon && current.icon !== "NONE" ? `<span class="step-icon-badge">[${current.icon}]</span>` : "";
+
+        hero.innerHTML = `
+          <div class="step-hero-header">
+            <span>Current Action • Step ${currentIdx + 1}</span>
+            ${iconBadge}
+          </div>
+          <div class="step-hero-instruction">
+            <span>${current.instruction}</span>
+          </div>
+          ${current.description ? `<div class="step-hero-desc">${current.description}</div>` : ""}
+        `;
+        stepsContainer.appendChild(hero);
+      }
+
+      // Step cards list
+      steps.forEach((step, idx) => {
+        const card = document.createElement("div");
+        card.className = `step-card ${idx === currentIdx ? "active" : ""}`;
+        card.onclick = () => selectStep(idx);
+
+        const iconBadge = step.icon && step.icon !== "NONE" ? `<span class="step-icon-badge">[${step.icon}]</span>` : "";
+        const statusIcon = step.is_done ? "✅" : (idx === currentIdx ? "📍" : "⚪");
+
+        card.innerHTML = `
+          <div class="step-card-top">
+            <span>${statusIcon} Step ${idx + 1}</span>
+            ${iconBadge}
+          </div>
+          <div class="step-card-instruction">
+            <span>${step.instruction}</span>
+          </div>
+        `;
+        stepsContainer.appendChild(card);
+      });
+    }
+
+    async function sendChat(msg) {
+      if (!msg || !msg.trim()) return;
+      chatInput.value = "";
+      try {
+        await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: msg.trim() })
+        });
+        fetchState();
+      } catch (err) {
+        console.error("Error sending message:", err);
+      }
+    }
+
+    async function selectStep(idx) {
+      try {
+        await fetch("/api/step", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ step: idx })
+        });
+        fetchState();
+      } catch (err) {
+        console.error("Error changing step:", err);
+      }
+    }
+
+    async function stepNav(action) {
+      try {
+        await fetch("/api/step", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: action })
+        });
+        fetchState();
+      } catch (err) {
+        console.error("Error stepping:", err);
+      }
+    }
+
+    // Event Listeners
+    btnSend.onclick = () => sendChat(chatInput.value);
+    chatInput.onkeydown = (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendChat(chatInput.value);
+      }
+    };
+
+    btnClear.onclick = async () => {
+      await fetch("/api/clear", { method: "POST" });
+      fetchState();
+    };
+
+    btnPrev.onclick = () => stepNav("prev");
+    btnNext.onclick = () => stepNav("next");
+
+    // Web Speech API Voice Dictation
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = "en-US";
+
+      let isListening = false;
+
+      btnMic.onclick = () => {
+        if (!isListening) {
+          recognition.start();
+        } else {
+          recognition.stop();
+        }
+      };
+
+      recognition.onstart = () => {
+        isListening = true;
+        btnMic.classList.add("listening");
+        chatInput.placeholder = "Listening... speak now";
+      };
+
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        chatInput.value = transcript;
+        sendChat(transcript);
+      };
+
+      recognition.onerror = (event) => {
+        console.error("Speech recognition error:", event.error);
+      };
+
+      recognition.onend = () => {
+        isListening = false;
+        btnMic.classList.remove("listening");
+        chatInput.placeholder = "Ask a question or request guidance...";
+      };
+    } else {
+      btnMic.style.display = "none";
+    }
+
+    // Text-to-Speech (TTS)
+    function speakStep(step, idx) {
+      if (!window.speechSynthesis || !step) return;
+      window.speechSynthesis.cancel();
+      const textToSpeak = `Step ${idx + 1}: ${step.instruction}`;
+      const utterance = new SpeechSynthesisUtterance(textToSpeak);
+      utterance.rate = 1.05;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    btnTts.onclick = () => {
+      ttsEnabled = !ttsEnabled;
+      btnTts.classList.toggle("active", ttsEnabled);
+      if (ttsEnabled && appState.steps.length > 0) {
+        speakStep(appState.steps[appState.current_step], appState.current_step);
+      }
+    };
+
+    // Auto-polling interval
+    setInterval(fetchState, 450);
+    fetchState();
+  </script>
+</body>
+</html>

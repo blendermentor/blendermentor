@@ -414,6 +414,20 @@ class BLENDERMENTOR_OT_clear_chat(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERMENTOR_OT_open_web_companion(bpy.types.Operator):
+    bl_idname = "blendermentor.open_web_companion"
+    bl_label = "Browser Companion"
+    bl_description = "Open BlenderMentor in a browser window (ideal for dual monitors & voice input)"
+
+    def execute(self, context):
+        import webbrowser
+        port = 8765
+        url = f"http://127.0.0.1:{port}"
+        webbrowser.open(url)
+        self.report({'INFO'}, f"Opened BlenderMentor Companion at {url}")
+        return {'FINISHED'}
+
+
 class BLENDERMENTOR_OT_step_next(bpy.types.Operator):
     bl_idname = "blendermentor.step_next"
     bl_label = "Next"
@@ -727,6 +741,9 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         layout = self.layout
         row = layout.row(align=True)
 
+        # Open Web Companion button (great for second monitor)
+        row.operator("blendermentor.open_web_companion", text="", icon='URL')
+
         # Pop-out / dock buttons in the header
         row.operator("blendermentor.popout", text="", icon='WINDOW')
 
@@ -983,6 +1000,7 @@ def _calc_char_width(context):
 _classes = (
     BLENDERMENTOR_OT_send_message,
     BLENDERMENTOR_OT_clear_chat,
+    BLENDERMENTOR_OT_open_web_companion,
     BLENDERMENTOR_OT_step_next,
     BLENDERMENTOR_OT_step_prev,
     BLENDERMENTOR_OT_step_goto,
