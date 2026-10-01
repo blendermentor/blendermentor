@@ -1,98 +1,116 @@
 # BlenderMentor
 
-**BlenderMentor** is a Blender add-on that provides an AI-powered chat interface directly inside Blender that helps YOU CREATE, by answering your questions and guiding you through workflows step by step, highlighting relevant UI elements in real-time.
+**BlenderMentor** is an AI-powered tutoring companion embedded directly inside Blender. It teaches you how to create by answering your questions, breaking complex workflows into step-by-step guidance, and visually highlighting relevant UI elements in real-time — without ever altering your scene on your behalf.
+
+In addition to the native 3D Viewport N-panel sidebar, BlenderMentor now includes a **Browser Companion App** designed for dual-screen setups, tablets, and second monitors, complete with voice dictation, high-quality speech readout, official Blender vector icons, and real-time scene synchronization.
 
 ---
 
 ## 🌟 Key Features
 
-- **Context-Aware AI Chat**: Integrated directly into the Blender N-panel. The AI reads your current scene state (active objects, materials, modifiers, etc.) to provide tailored advice.
-- **Guided Step-by-Step Navigation**: Procedures are broken down into digestible steps.
-- **Dynamic UI Highlighting**: The AI doesn't just tell you what to do, but also highlights editor area, tab groups etc. to guide you where to look.
-- **Flexible UI Layouts**: You may use it in the Sidebar, pop it out into a floating window for dual-monitor setups, or dock it as a split area in your workspace.
-- **Privacy & Control**: Uses your own API keys for **Gemini** or **Claude**. Supports **Ollama** for running open-source models locally with 100% privacy. No hardcoded models — the list is fetched live from the providers.
+### 🖥️ 1. Dual-Column Browser Companion (`http://localhost:8765`)
+- **Second-Screen Workflow**: Keep your 3D Viewport completely clutter-free while running your interactive mentor in any web browser on a second monitor, laptop, or tablet.
+- **Dual-Column Layout**: Dedicated conversation & voice guidance on the left, paired with an interactive guided step checklist and active hero card on the right.
+- **Bi-directional Live Sync**: Step selection, highlights, follow-ups, and chat history synchronize instantly between Blender and your browser.
+- **Zero Configuration**: Built-in Python HTTP server running inside Blender — no Node.js, external servers, or terminal setups required.
 
-## ⚠️ Things BlenderMentor doesn't do just yet
+### 🎙️ 2. Voice Dictation & Live Audio VU Meter
+- **Hands-Free Speech-to-Text**: Click the mic or press a shortcut to speak your questions naturally while keeping your hands on your mouse and keyboard.
+- **Live Waveform & Audio Meter**: Visual 5-bar audio visualizer with real-time input percentage feedback so you know sound is being received.
+- **Hardware Device Detector**: Identifies active microphone devices and alerts you if a silent virtual device (such as BlackHole) is accidentally selected.
+- **Privacy-First**: Audio is transcribed client-side into text; raw voice recordings are never sent to external servers or stored in files.
 
-- **It's limited to the AI Model's knowledge**: Since dynamic websearch is not enabled yet, ai will not be able to answer about latest changes in blender.
-- **It cannot 'see' your screen**: Procedures are broken down into digestible steps.
-- **Dynamic UI Highlighting**: The AI doesn't just tell you what to do, but also highlights editor area, tab groups etc. to guide you where to look.
-- **Flexible UI Layouts**: You may use it in the Sidebar, pop it out into a floating window for dual-monitor setups, or dock it as a split area in your workspace.
-- **Privacy & Control**: Uses your own API keys for **Gemini** or **Claude**. Supports **Ollama** for running open-source models locally with 100% privacy. No hardcoded models — the list is fetched live from the providers.
+### 🔊 3. Natural Voice Readout (TTS)
+- **High-Quality Speech Synthesis**: Automatically prioritizes modern neural, natural, and enhanced system voices over legacy novelty synthesizers.
+- **Voice Selector Dropdown**: Choose your preferred narrator voice right from the browser header.
+- **Conversational Pacing**: Reads the mentor's friendly conversational summary first before sequentially walking you through Step 1.
+
+### 🎨 4. Official Blender UI Vector Icons
+- **791 Official SVG Icons**: Embedded vector icons extracted directly from [ui.blender.org/icons](https://ui.blender.org/icons).
+- **Contextual Visual Badges**: Step cards display the exact icons you see inside Blender (e.g. Modifier wrench, Bevel, Material preview, Light data, Outliner, etc.) to help you find tools faster.
+
+### 🎯 5. Guided Step-by-Step Navigation & Highlighting
+- **Structured Guidance**: Complex 3D tasks are organized into manageable, numbered action steps.
+- **Step Reasoning & Context**: Each step provides clear action instructions plus detailed background context explaining *why* the setting matters and *where* to find submenus.
+- **Dynamic UI Highlighting (Level 1–4)**:
+  - **Level 1 Area Quad**: Highlights entire editor areas (Properties, Viewport, Timeline, Outliner).
+  - **Level 2 Tab Icons**: Highlights specific navigation tabs (e.g. Modifier wrench tab in Properties).
+  - **Level 3 Region Overlay**: Targets editor headers, toolbars, and sidebars.
+  - **Level 4 Panel/Menu Injection**: Injects visual `◀ HERE` indicators inside menus and panels.
+- **Show Highlight (`💡`)**: Re-trigger any step's visual highlight directly from the browser card or N-panel.
+- **Ask Follow-Up (`❓`)**: One-click clarification on any specific step with dedicated follow-up context.
+
+### 🧠 6. Agentic Tool Calling & Web Knowledge
+- **Two-Tier Context**: Sends minimal base context upfront and allows the AI to call on-demand tools (`get_render_settings`, `get_viewport_state`, `get_object_details`, `get_selection_info`, `get_active_tool_info`) only when necessary.
+- **Blender Community & Docs Integration**: Live lookup tools for Blender Stack Exchange solutions and version-specific Blender documentation.
+- **Provider Choice**: Use your own API keys for **Google Gemini** (default) or **Anthropic Claude**, or run local models with 100% privacy via **Ollama**. Model lists are fetched dynamically — no hardcoded models.
 
 ---
 
-## 🚀 Getting Started
+## 🚀 Installation & Quick Start
 
-> 💡 **For full, detailed setup, key features, and troubleshooting instructions, please read our [Installation and Usage Guide](INSTRUCTIONS.md).**
-
-## Installation
+### Installation
 
 1. Download the latest `blendermentor_addon.zip` from the [Releases](https://github.com/blendermentor/blendermentor/releases) page.
 2. In Blender, go to `Edit > Preferences > Get Extensions`.
-3. Click the **cog/gear icon** in the top-right corner of the preferences window and select **Install from Disk...**
-4. Select the `blendermentor_addon.zip` file and confirm installation.
+3. Click the **cog/gear icon** in the top-right corner and select **Install from Disk...**
+4. Choose `blendermentor_addon.zip` and enable the add-on.
 
 ### API Configuration
 
-1. In the Add-on preferences (accessible via `Edit > Preferences > Add-ons` or your installed extensions details panel), choose your preferred provider (**Gemini**, **Claude**, or **Ollama**).
-2. Enter your API Key (or host address for Ollama).
-3. Click **Fetch Models** to populate the model list.
-4. Select your desired model and click **Test Connection** to verify.
+1. In `Edit > Preferences > Add-ons > BlenderMentor`:
+   - Select your preferred provider (**Gemini**, **Claude**, or **Ollama**).
+   - Enter your API Key (or host URL for Ollama).
+   - Click **Fetch Models** to populate the model list live from the provider.
+   - Pick your preferred model and click **Test Connection**.
 
 ---
 
-## 🛠 Usage
+## 🛠 Usage Modes
 
-1. Open the **BlenderMentor** tab in the 3D Viewport Sidebar (press `N` to toggle).
-2. Type your question (e.g., "How do I add a bevel to this cube?") and press **Send** (or press **Enter**).
-3. The AI will respond with a friendly one-liner summary and a comprehensive list of steps.
-4. Interact with the Guided Steps panel:
-   *   **Click-Anywhere Selection**: Click directly on any step box (the instruction or explanation text) to instantly focus it and trigger its visual highlight overlay.
-   *   **Highlight Re-trigger**: Click the lightbulb (`'LIGHT'`) icon next to a step header to replay its highlight animation at any time.
-   *   **Top-Row Navigation**: Use the arrow navigators (`'TRIA_LEFT'` and `'TRIA_RIGHT'`) at the top of the panel to step through sequentially.
-   *   **YouTube Search**: Click the Globe (`'URL'`) icon in the top progress bar to immediately launch an optimized YouTube tutorial search in your external web browser.
-5. If you're stuck, click the **Ask ❓** button next to any step's instruction to ask a follow-up question specifically about that part of the process.
+### Mode 1: 3D Viewport Sidebar (N-Panel)
+1. In the 3D Viewport, press `N` to expand the Sidebar and switch to the **BlenderMentor** tab.
+2. Type your question or request guidance (e.g., *"How do I add a bevel modifier to my cube?"*) and press **Enter**.
+3. Use the arrow controls or click any step to trigger the visual highlight overlay in your scene.
 
----
-
-## 🏗 Architecture
-
-BlenderMentor is built with a focus on being lightweight and self-contained:
-
-- **Logic**: Pure Python using Blender's `bpy` and `gpu` modules.
-- **Networking**: Built-in `urllib` for API calls — no external dependencies or `pip` required.
-- **Drawing**: GPU-accelerated highlight overlays using the `gpu` module (Blender 4.0+ compatible).
-- **State Management**: Scene-level properties that persist with your `.blend` file.
+### Mode 2: Browser Companion (Dual-Monitor / Tablet)
+1. With Blender open, navigate to **`http://localhost:8765`** in Google Chrome, Edge, Safari, or on your tablet.
+2. Type or click the **🎙️** button to dictate your question using voice.
+3. Review the dual-column guidance:
+   - **Left Column**: Live chat conversation and reasoning status.
+   - **Right Column**: Guided checklist, active step hero card with reasoning, **💡 Highlight** button, and **❓ Ask** follow-up button.
+4. Click **🔊 Voice Readout** to have steps read aloud as you work.
 
 ---
 
-## 🧑‍💻 Developer Tools
+## 🏗 Architecture & Tech Stack
 
-Enable **Developer Mode** in preferences to access built-in debugging tools:
-- **Highlight Tester**: Manually trigger any UI highlight target.
-- **Context Inspector**: View the raw JSON data being sent to the AI.
-- **Mock Step Tester**: Test navigation UI without consuming API credits.
+- **Language**: Pure Python using Blender's bundled interpreter (`bpy`, `gpu`).
+- **Networking**: Python standard library `urllib` — zero pip dependencies required.
+- **Embedded Server**: Native threaded HTTP server (`server.py`) serving the companion web app and REST state endpoints on port 8765.
+- **Drawing Engine**: Modern GPU shaders via `gpu` module (`POST_PIXEL` draw handlers, Blender 4.0+ compatible; no deprecated `bgl`).
+- **State Management**: Scene-level properties (`bpy.types.Scene`) that persist with your `.blend` file.
 
 ---
 
-## 🤝 Contributions
+## 🧑‍💻 Developer Mode
 
-**BlenderMentor** was originally created by [bijuneyyan](https://github.com/bijuneyyan). 
+Enable **Developer Mode** in preferences to unlock internal testing tools:
+- **Highlight Tester**: Manually fire any UI highlight target without querying the AI.
+- **Context Inspector**: Inspect the exact JSON scene payload sent to the AI in real time.
+- **Step Navigator Tester**: Inject mock step sequences to test UI flows without using API quota.
 
-Contributions are welcome! If you'd like to help improve the project, please check out our [Contributing Guide](CONTRIBUTING.md) for details on how to get started, our development workflow, and coding standards.
+---
 
-## 🛡 Privacy
+## 🛡 Privacy & Transparency
 
-Your privacy is important. BlenderMentor is designed to be as transparent as possible:
-- **Direct Communication**: All data is sent directly from your computer to the AI provider. No intermediate servers are used.
-- **Local Storage**: API keys are stored only in your local Blender preferences.
-- **Zero Telemetry**: We do not track your usage or collect any personal data.
-
-For more details, see our full [Privacy Notice](PRIVACY.md).
+- **Direct Connections**: All requests are sent directly from your machine to your chosen AI provider endpoint. No intermediary proxy servers.
+- **Local Keys**: API keys are saved exclusively in your local `AddonPreferences` and never saved inside `.blend` project files.
+- **Zero Telemetry**: No tracking, usage analytics, or external telemetry of any kind.
+- **No Autonomous Scene Alteration**: BlenderMentor will never execute destructive code or modify your meshes without your consent.
 
 ---
 
 ## 📄 License
 
-This project is licensed under the **GPL v3** License — a requirement for all Blender add-ons interacting with `bpy`. See the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License v3 (GPL v3)**. See [LICENSE](LICENSE) for details.
