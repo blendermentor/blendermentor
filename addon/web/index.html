@@ -393,7 +393,37 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     .step-hero-desc {
       font-size: 13.5px;
       line-height: 1.5;
-      color: #cccccc;
+      color: #cad6e6;
+      background: rgba(0, 0, 0, 0.22);
+      border-left: 3px solid var(--accent);
+      padding: 8px 12px;
+      border-radius: 4px;
+      margin-top: 2px;
+    }
+
+    .step-hero-desc strong {
+      color: #90caf9;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    .step-card-reasoning {
+      font-size: 12.5px;
+      line-height: 1.45;
+      color: #949494;
+      padding-left: 36px;
+      margin-top: 2px;
+    }
+
+    .step-card:hover .step-card-reasoning {
+      color: #b5b5b5;
+    }
+
+    .step-card.active .step-card-reasoning {
+      color: #d8d8d8;
     }
 
     .step-tag {
@@ -979,7 +1009,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             ${getBlenderIconSVG(current.icon)}
             <span style="flex: 1;">${current.instruction}</span>
           </div>
-          ${current.description ? `<div class="step-hero-desc">${current.description}</div>` : ""}
+          ${current.description ? `<div class="step-hero-desc"><strong>💡 Context & Reasoning</strong>${current.description}</div>` : ""}
         `;
         stepsContainer.appendChild(hero);
       }
@@ -1004,6 +1034,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             ${getBlenderIconSVG(step.icon)}
             <span style="flex: 1;">${step.instruction}</span>
           </div>
+          ${step.description ? `<div class="step-card-reasoning">${step.description}</div>` : ""}
         `;
         stepsContainer.appendChild(card);
       });
