@@ -335,10 +335,10 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       border-color: var(--accent);
     }
 
-    /* Mic Button */
     .btn-mic {
       padding: 9px 12px;
       border-radius: var(--radius);
+      transition: background-color 0.2s, border-color 0.2s;
     }
 
     .btn-mic.listening {
@@ -346,6 +346,57 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       border-color: var(--red);
       color: #fff;
       animation: pulse 1s infinite;
+    }
+
+    /* Microphone Status & Live Audio Meter Banner */
+    .mic-status-banner {
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 14px;
+      background-color: rgba(235, 75, 75, 0.15);
+      border: 1px solid rgba(235, 75, 75, 0.4);
+      border-radius: var(--radius);
+      font-size: 13px;
+      color: #ffcdd2;
+      margin: 0 16px 10px 16px;
+      transition: background-color 0.2s, border-color 0.2s;
+    }
+
+    .mic-status-banner.error {
+      background-color: rgba(244, 67, 54, 0.22);
+      border-color: var(--red);
+      color: #ffffff;
+    }
+
+    .mic-wave-container {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+      height: 18px;
+      flex-shrink: 0;
+    }
+
+    .mic-wave-bar {
+      width: 3px;
+      height: 16px;
+      background-color: #ff5252;
+      border-radius: 2px;
+      transform-origin: bottom;
+      transform: scaleY(0.25);
+      transition: transform 0.08s ease, opacity 0.08s ease;
+    }
+
+    .mic-status-banner.error .mic-wave-container {
+      display: none;
+    }
+
+    .mic-status-text {
+      flex: 1;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
     }
 
     /* Right Column: Steps Navigator */
@@ -671,6 +722,18 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       <div id="followupBanner" class="followup-banner">
         <span id="followupText">❓ Asking about Step 1</span>
         <button id="btnCancelFollowup" class="btn-cancel-followup" title="Cancel follow-up (return to regular chat)" onclick="cancelFollowup()">✕ Cancel</button>
+      </div>
+
+      <div id="micStatusBanner" class="mic-status-banner">
+        <div class="mic-wave-container">
+          <span class="mic-wave-bar"></span>
+          <span class="mic-wave-bar"></span>
+          <span class="mic-wave-bar"></span>
+          <span class="mic-wave-bar"></span>
+          <span class="mic-wave-bar"></span>
+        </div>
+        <span id="micStatusText" class="mic-status-text">Listening... speak your question</span>
+        <button id="btnStopMic" class="btn-cancel-followup" title="Finish voice dictation" onclick="stopDictation(true)">✕ Stop</button>
       </div>
 
       <div class="chat-input-bar">
@@ -1097,6 +1160,9 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
     async function sendChat(msg) {
       if (!msg || !msg.trim()) return;
+      if (typeof stopDictation === "function") {
+        stopDictation(false);
+      }
       const text = msg.trim();
       const followupIdx = activeFollowupStep;
       
@@ -1162,11 +1228,17 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     chatInput.onkeydown = (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
+        if (typeof stopDictation === "function") {
+          stopDictation(false);
+        }
         sendChat(chatInput.value);
       }
     };
 
     btnClear.onclick = async () => {
+      if (typeof stopDictation === "function") {
+        stopDictation(false);
+      }
       await fetch("/api/clear", { method: "POST" });
       fetchState();
     };
@@ -1174,77 +1246,267 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     btnPrev.onclick = () => stepNav("prev");
     btnNext.onclick = () => stepNav("next");
 
-    // Web Speech API Voice Dictation
+    // Robust Web Speech API Dictation with Live Audio Meter & Auto-Restart
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = navigator.language || "en-US";
-      recognition.maxAlternatives = 1;
+    const micStatusBanner = document.getElementById("micStatusBanner");
+    const micStatusText = document.getElementById("micStatusText");
+    const micBars = document.querySelectorAll(".mic-wave-bar");
 
-      let isListening = false;
-      let finalTranscript = "";
+    let isUserDictating = false;
+    let recognitionInstance = null;
+    let mediaStream = null;
+    let audioContext = null;
+    let analyserNode = null;
+    let animFrameId = null;
+    let confirmedDictation = "";
+    let interimDictation = "";
+    let micErrorTimeout = null;
+    let silenceCheckTimer = null;
+    let hasDetectedSound = false;
 
-      btnMic.onclick = () => {
-        if (!isListening) {
-          try {
-            finalTranscript = chatInput.value ? chatInput.value.trim() + " " : "";
-            recognition.start();
-          } catch (e) {
-            console.warn("Recognition already active", e);
+    function showMicError(msg) {
+      if (micStatusBanner) {
+        micStatusBanner.style.display = "flex";
+        micStatusBanner.classList.add("error");
+        micStatusText.textContent = msg;
+        if (micErrorTimeout) clearTimeout(micErrorTimeout);
+        micErrorTimeout = setTimeout(() => {
+          if (!isUserDictating && micStatusBanner) {
+            micStatusBanner.style.display = "none";
+            micStatusBanner.classList.remove("error");
           }
-        } else {
-          recognition.stop();
-        }
-      };
+        }, 6000);
+      }
+    }
 
-      recognition.onstart = () => {
-        isListening = true;
-        btnMic.classList.add("listening");
-        btnMic.title = "Listening... click to stop";
-        chatInput.placeholder = "🎙️ Listening... speak now";
-      };
+    function setupAudioVisualizer(stream) {
+      try {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (!AudioCtx) return;
+        audioContext = new AudioCtx();
+        const source = audioContext.createMediaStreamSource(stream);
+        analyserNode = audioContext.createAnalyser();
+        analyserNode.fftSize = 64;
+        source.connect(analyserNode);
 
-      recognition.onresult = (event) => {
-        let interim = "";
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          const res = event.results[i];
-          if (res.isFinal) {
-            finalTranscript += res[0].transcript + " ";
-          } else {
-            interim += res[0].transcript;
+        const dataArray = new Uint8Array(analyserNode.frequencyBinCount);
+
+        function updateMeter() {
+          if (!isUserDictating || !analyserNode) return;
+          analyserNode.getByteFrequencyData(dataArray);
+
+          let sum = 0;
+          for (let i = 0; i < dataArray.length; i++) {
+            sum += dataArray[i];
           }
-        }
-        chatInput.value = (finalTranscript + interim).trim();
-      };
+          const avg = sum / dataArray.length; // 0 to 255
+          if (avg > 10) {
+            hasDetectedSound = true;
+          }
 
-      recognition.onerror = (event) => {
-        console.error("Speech recognition error:", event.error);
-        if (event.error === "no-speech") {
-          chatInput.placeholder = "No speech detected. Click mic to try again.";
-        } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
-          chatInput.placeholder = "Microphone access blocked. Allow mic in browser settings.";
-        } else if (event.error === "network") {
-          chatInput.placeholder = "Speech recognition network error (check connection).";
-        } else {
-          chatInput.placeholder = `Speech error: ${event.error}`;
-        }
-      };
+          micBars.forEach((bar, idx) => {
+            const freqVal = dataArray[(idx * 2) % dataArray.length] || avg;
+            const normalized = Math.max(0.2, Math.min(1.0, freqVal / 100));
+            bar.style.transform = `scaleY(${normalized})`;
+            bar.style.opacity = avg > 8 ? "1" : "0.45";
+          });
 
-      recognition.onend = () => {
-        isListening = false;
+          animFrameId = requestAnimationFrame(updateMeter);
+        }
+        updateMeter();
+      } catch (err) {
+        console.warn("Could not start audio visualizer:", err);
+      }
+    }
+
+    function stopDictation(focusInput = true) {
+      isUserDictating = false;
+      if (silenceCheckTimer) {
+        clearTimeout(silenceCheckTimer);
+        silenceCheckTimer = null;
+      }
+      if (btnMic) {
         btnMic.classList.remove("listening");
         btnMic.title = "Click to speak (Voice Input)";
-        if (!chatInput.value.trim()) {
-          chatInput.placeholder = "Ask a question or request guidance...";
-        } else {
-          chatInput.focus();
-        }
-      };
-    } else {
-      btnMic.style.display = "none";
+      }
+
+      if (recognitionInstance) {
+        try {
+          recognitionInstance.stop();
+        } catch (e) {}
+      }
+
+      if (mediaStream) {
+        mediaStream.getTracks().forEach(t => t.stop());
+        mediaStream = null;
+      }
+
+      if (audioContext && audioContext.state !== "closed") {
+        audioContext.close().catch(() => {});
+        audioContext = null;
+      }
+
+      if (animFrameId) {
+        cancelAnimationFrame(animFrameId);
+        animFrameId = null;
+      }
+
+      micBars.forEach(bar => {
+        bar.style.transform = "scaleY(0.25)";
+        bar.style.opacity = "0.5";
+      });
+
+      if (micStatusBanner && !micStatusBanner.classList.contains("error")) {
+        micStatusBanner.style.display = "none";
+      }
+
+      if (focusInput && chatInput) {
+        chatInput.focus();
+      }
     }
+    window.stopDictation = stopDictation;
+
+    async function startDictation() {
+      if (!SpeechRecognition) {
+        showMicError("Speech recognition is not supported in this browser. Please use Chrome or Edge.");
+        return;
+      }
+
+      isUserDictating = true;
+      hasDetectedSound = false;
+      confirmedDictation = chatInput.value ? chatInput.value.trim() + " " : "";
+      interimDictation = "";
+
+      btnMic.classList.add("listening");
+      btnMic.title = "Listening... click to stop";
+      if (micStatusBanner) {
+        micStatusBanner.style.display = "flex";
+        micStatusBanner.classList.remove("error");
+        micStatusText.textContent = "Requesting microphone permission...";
+      }
+
+      // 1. Request hardware microphone access via getUserMedia
+      // This ensures the browser's permission prompt is resolved BEFORE speech recognition begins,
+      // and connects the live audio visualizer meter so user has visual feedback that sound is detected.
+      try {
+        if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+          mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          setupAudioVisualizer(mediaStream);
+        }
+      } catch (err) {
+        console.warn("getUserMedia error:", err);
+        if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
+          showMicError("Microphone access denied in browser or macOS Settings. Please allow mic access.");
+          stopDictation(false);
+          return;
+        }
+      }
+
+      if (!isUserDictating) return; // User stopped while prompt was open
+
+      micStatusText.textContent = "🎙️ Listening... speak your question now";
+
+      // Periodically check if sound is detected. If flat silence for 4s, provide gentle guidance
+      silenceCheckTimer = setTimeout(() => {
+        if (isUserDictating && !hasDetectedSound && !interimDictation && !confirmedDictation) {
+          micStatusText.textContent = "Listening... (If mic is silent, check macOS Sound Input volume)";
+        }
+      }, 4000);
+
+      // 2. Initialize or start SpeechRecognition
+      if (!recognitionInstance) {
+        recognitionInstance = new SpeechRecognition();
+        recognitionInstance.continuous = false; // single phrase turns for rock-solid Chrome stability
+        recognitionInstance.interimResults = true;
+        recognitionInstance.maxAlternatives = 1;
+        recognitionInstance.lang = navigator.language || "en-US";
+
+        recognitionInstance.onstart = () => {
+          if (isUserDictating) {
+            micStatusText.textContent = "🎙️ Listening... speak your question now";
+          }
+        };
+
+        recognitionInstance.onresult = (event) => {
+          hasDetectedSound = true;
+          let currentPhrase = "";
+          for (let i = 0; i < event.results.length; ++i) {
+            const res = event.results[i];
+            if (res.isFinal) {
+              confirmedDictation += res[0].transcript.trim() + " ";
+            } else {
+              currentPhrase += res[0].transcript;
+            }
+          }
+          interimDictation = currentPhrase;
+          const fullText = (confirmedDictation + interimDictation).trim();
+          chatInput.value = fullText;
+          if (fullText) {
+            micStatusText.textContent = `🗣️ Hearing: "${(interimDictation || fullText)}"`;
+          }
+        };
+
+        recognitionInstance.onerror = (event) => {
+          console.warn("SpeechRecognition error:", event.error);
+          if (event.error === "no-speech") {
+            // Non-fatal: Chrome timed out waiting for speech. We smoothly keep dictation alive!
+            if (isUserDictating) {
+              micStatusText.textContent = "Waiting for speech... (speak into your microphone)";
+            }
+          } else if (event.error === "not-allowed" || event.error === "service-not-allowed") {
+            showMicError("Microphone access blocked. Allow microphone in Chrome or macOS Settings.");
+            stopDictation(false);
+          } else if (event.error === "audio-capture") {
+            showMicError("No microphone found. Please connect a microphone or select input in macOS.");
+            stopDictation(false);
+          } else if (event.error === "network") {
+            showMicError("Speech recognition network error. Check internet connection.");
+            stopDictation(false);
+          }
+        };
+
+        recognitionInstance.onend = () => {
+          // If the user is still in dictation mode, seamlessly restart recognition for next phrase!
+          if (isUserDictating) {
+            try {
+              recognitionInstance.start();
+            } catch (e) {
+              setTimeout(() => {
+                if (isUserDictating) {
+                  try { recognitionInstance.start(); } catch (err) {}
+                }
+              }, 120);
+            }
+          } else {
+            stopDictation(true);
+          }
+        };
+      }
+
+      try {
+        recognitionInstance.start();
+      } catch (e) {
+        console.warn("SpeechRecognition start exception:", e);
+      }
+    }
+
+    if (btnMic) {
+      if (SpeechRecognition) {
+        btnMic.onclick = () => {
+          if (!isUserDictating) {
+            startDictation();
+          } else {
+            stopDictation(true);
+          }
+        };
+      } else {
+        btnMic.style.display = "none";
+      }
+    }
+
+    window.addEventListener("beforeunload", () => {
+      stopDictation(false);
+    });
 
     // High-Quality Text-to-Speech (TTS)
     let availableVoices = [];
