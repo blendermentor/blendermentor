@@ -146,6 +146,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                             "highlight": hl,
                         })
 
+                followup_step = getattr(scene, "bm_followup_step", -1) if scene else -1
+
                 data = {
                     "active_object": act_obj.name if act_obj else None,
                     "active_object_type": act_obj.type if act_obj else None,
@@ -153,6 +155,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     "chat_history": chat_data,
                     "steps": steps_data,
                     "current_step": current_step,
+                    "followup_step": followup_step,
                     "is_processing": is_processing,
                     "status_message": status_msg,
                     "youtube_query": youtube_query,
@@ -188,6 +191,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
         # 1. Send chat message / voice transcript from browser
         if self.path == "/api/chat":
             msg_text = req_data.get("message", "").strip()
+            followup_arg = req_data.get("followup_step")
             if not msg_text:
                 self.send_response(400)
                 self._set_cors_headers()
@@ -198,6 +202,11 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             def _schedule_message():
                 scene = getattr(bpy.context, "scene", None)
                 if scene:
+                    if followup_arg is not None:
+                        try:
+                            scene.bm_followup_step = int(followup_arg)
+                        except Exception:
+                            pass
                     scene.bm_input_text = msg_text
                     try:
                         bpy.ops.blendermentor.send_message('EXEC_DEFAULT')
@@ -213,7 +222,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "queued", "message": msg_text}).encode("utf-8"))
             return
 
-        # 2. Step navigation from browser
+        # 2. Step navigation and highlighting from browser
         if self.path == "/api/step":
             action = req_data.get("action")
             step_idx = req_data.get("step")
@@ -226,6 +235,10 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     bpy.ops.blendermentor.step_next('EXEC_DEFAULT')
                 elif action == "prev":
                     bpy.ops.blendermentor.step_prev('EXEC_DEFAULT')
+                elif action in ("highlight", "goto") and step_idx is not None and 0 <= step_idx < len(scene.bm_steps):
+                    scene.bm_current_step = step_idx
+                    from .ui.chat_panel import _activate_step
+                    _activate_step(scene, step_idx)
                 elif step_idx is not None and 0 <= step_idx < len(scene.bm_steps):
                     scene.bm_current_step = step_idx
                     from .ui.chat_panel import _activate_step
@@ -233,6 +246,30 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 return None
 
             bpy.app.timers.register(_schedule_step, first_interval=0.001)
+
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+            return
+
+        # 3. Follow-up state management
+        if self.path == "/api/followup":
+            action = req_data.get("action")
+            step_idx = req_data.get("step", -1)
+
+            def _schedule_followup():
+                scene = getattr(bpy.context, "scene", None)
+                if not scene:
+                    return None
+                if action == "set" and 0 <= step_idx < len(scene.bm_steps):
+                    scene.bm_followup_step = step_idx
+                    scene.bm_input_text = ""
+                elif action == "cancel":
+                    scene.bm_followup_step = -1
+                return None
+
+            bpy.app.timers.register(_schedule_followup, first_interval=0.001)
 
             self.send_response(200)
             self._set_cors_headers()
