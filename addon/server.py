@@ -38,9 +38,11 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_GET(self):
-        # 1. Web companion single-page app
+        clean_path = self.path.split("?")[0].lstrip("/")
+
+        # 1. Web companion single-page app or static asset
+        web_dir = os.path.join(os.path.dirname(__file__), "web")
         if self.path in ("/", "/index.html", ""):
-            web_dir = os.path.join(os.path.dirname(__file__), "web")
             index_path = os.path.join(web_dir, "index.html")
             if os.path.exists(index_path):
                 with open(index_path, "rb") as f:
@@ -56,6 +58,43 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 self._set_cors_headers("text/plain")
                 self.end_headers()
                 self.wfile.write(b"Web companion UI file not found.")
+                return
+
+        # Static assets in web/ (e.g. blender_icons.js, css, etc.)
+        candidate_web_file = os.path.abspath(os.path.join(web_dir, clean_path))
+        if candidate_web_file.startswith(web_dir) and os.path.isfile(candidate_web_file):
+            ext = os.path.splitext(candidate_web_file)[1].lower()
+            mime_map = {
+                ".js": "application/javascript; charset=utf-8",
+                ".css": "text/css; charset=utf-8",
+                ".json": "application/json; charset=utf-8",
+                ".svg": "image/svg+xml",
+                ".html": "text/html; charset=utf-8",
+                ".png": "image/png",
+            }
+            mime = mime_map.get(ext, "application/octet-stream")
+            with open(candidate_web_file, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self._set_cors_headers(mime)
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+            return
+
+        # Static official SVG icons from addon/icons/
+        if self.path.startswith("/icons/"):
+            icon_file = os.path.basename(clean_path)
+            icons_dir = os.path.join(os.path.dirname(__file__), "icons")
+            candidate_icon_file = os.path.abspath(os.path.join(icons_dir, icon_file))
+            if candidate_icon_file.startswith(icons_dir) and os.path.isfile(candidate_icon_file):
+                with open(candidate_icon_file, "rb") as f:
+                    content = f.read()
+                self.send_response(200)
+                self._set_cors_headers("image/svg+xml")
+                self.send_header("Content-Length", str(len(content)))
+                self.end_headers()
+                self.wfile.write(content)
                 return
 
         # 2. Health check
