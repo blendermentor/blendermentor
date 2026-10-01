@@ -399,6 +399,25 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       text-overflow: ellipsis;
     }
 
+    .mic-device-badge {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 3px 8px;
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      color: #ffd27f;
+      white-space: nowrap;
+      flex-shrink: 0;
+      cursor: default;
+    }
+
+    .mic-device-badge.warning {
+      background: rgba(244, 67, 54, 0.35);
+      border-color: var(--red);
+      color: #ffcdd2;
+    }
+
     /* Right Column: Steps Navigator */
     .steps-container {
       flex: 1;
@@ -733,6 +752,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
           <span class="mic-wave-bar"></span>
         </div>
         <span id="micStatusText" class="mic-status-text">Listening... speak your question</span>
+        <span id="micDeviceBadge" class="mic-device-badge" title="Active audio input device">Mic: Detecting...</span>
         <button id="btnStopMic" class="btn-cancel-followup" title="Finish voice dictation" onclick="stopDictation(true)">✕ Stop</button>
       </div>
 
@@ -1279,11 +1299,13 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       }
     }
 
+    let activeDeviceLabel = "";
+
     function setupAudioVisualizer(stream) {
       try {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
-        audioContext = new AudioCtx();
+        audioContext = new AudioCtx({ sampleRate: 44100 });
         const source = audioContext.createMediaStreamSource(stream);
         analyserNode = audioContext.createAnalyser();
         analyserNode.fftSize = 64;
@@ -1300,16 +1322,27 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             sum += dataArray[i];
           }
           const avg = sum / dataArray.length; // 0 to 255
-          if (avg > 10) {
+          const pct = Math.min(100, Math.round((avg / 100) * 100));
+
+          if (avg > 8) {
             hasDetectedSound = true;
           }
 
           micBars.forEach((bar, idx) => {
             const freqVal = dataArray[(idx * 2) % dataArray.length] || avg;
-            const normalized = Math.max(0.2, Math.min(1.0, freqVal / 100));
+            const normalized = Math.max(0.2, Math.min(1.0, freqVal / 85));
             bar.style.transform = `scaleY(${normalized})`;
-            bar.style.opacity = avg > 8 ? "1" : "0.45";
+            bar.style.opacity = avg > 6 ? "1" : "0.45";
           });
+
+          // Show real-time feedback in micStatusText when not actively hearing speech
+          if (isUserDictating && !interimDictation && micStatusText) {
+            if (activeDeviceLabel && activeDeviceLabel.toLowerCase().includes("blackhole")) {
+              micStatusText.textContent = "⚠️ Chrome using BlackHole 2ch (silent). Switch to iMac Mic!";
+            } else if (!hasDetectedSound) {
+              micStatusText.textContent = `🎙️ Listening (${pct}% vol)... Speak now`;
+            }
+          }
 
           animFrameId = requestAnimationFrame(updateMeter);
         }
@@ -1388,9 +1421,26 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       // 1. Request hardware microphone access via getUserMedia
       // This ensures the browser's permission prompt is resolved BEFORE speech recognition begins,
       // and connects the live audio visualizer meter so user has visual feedback that sound is detected.
+      const micDeviceBadge = document.getElementById("micDeviceBadge");
       try {
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
           mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          const audioTrack = mediaStream.getAudioTracks()[0];
+          if (audioTrack) {
+            activeDeviceLabel = audioTrack.label || "Default Mic";
+            if (micDeviceBadge) {
+              const shortLabel = activeDeviceLabel.length > 22 ? activeDeviceLabel.substring(0, 20) + "..." : activeDeviceLabel;
+              micDeviceBadge.textContent = shortLabel;
+              micDeviceBadge.title = `Active device: ${activeDeviceLabel}`;
+
+              if (activeDeviceLabel.toLowerCase().includes("blackhole")) {
+                micDeviceBadge.classList.add("warning");
+                showMicError("⚠️ Chrome is routed to 'BlackHole 2ch' (silent virtual device). Open chrome://settings/content/microphone and select 'iMac Microphone'.");
+              } else {
+                micDeviceBadge.classList.remove("warning");
+              }
+            }
+          }
           setupAudioVisualizer(mediaStream);
         }
       } catch (err) {
