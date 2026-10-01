@@ -402,8 +402,45 @@
       font-size: 14px;
       font-weight: 500;
       display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      line-height: 1.4;
+    }
+
+    .blender-icon-svg {
+      display: inline-flex;
       align-items: center;
-      gap: 8px;
+      justify-content: center;
+      width: 26px;
+      height: 26px;
+      background-color: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.16);
+      border-radius: 6px;
+      flex-shrink: 0;
+      margin-top: 1px;
+      transition: transform 0.15s, background-color 0.15s, border-color 0.15s;
+    }
+
+    .blender-icon-svg svg {
+      width: 18px;
+      height: 18px;
+      display: block;
+    }
+
+    .step-card:hover .blender-icon-svg {
+      background-color: rgba(255, 255, 255, 0.14);
+      transform: scale(1.05);
+    }
+
+    .step-card.active .blender-icon-svg {
+      border-color: var(--amber);
+      background-color: rgba(230, 149, 0, 0.18);
+    }
+
+    .blender-icon-badge svg {
+      width: 14px;
+      height: 14px;
+      display: inline-block;
     }
 
     .step-icon-badge {
@@ -632,6 +669,103 @@
       chatFeed.scrollTop = chatFeed.scrollHeight;
     }
 
+    const BLENDER_SVG_ICONS = {
+      MODIFIER: `<svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>`,
+      MOD_SUBSURF: `<svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3.5"/><path d="M12 3v18"/></svg>`,
+      MOD_BEVEL: `<svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3h10l4 4v10l-4 4H7l-4-4V7l4-4z"/><path d="M7 3v18M17 3v18M3 7h18M3 17h18"/></svg>`,
+      MOD_MIRROR: `<svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M4 7l8-3v16l-8-3V7zM20 7l-8-3v16l8-3V7z"/></svg>`,
+      MOD_BOOLEAN: `<svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2"><circle cx="9" cy="12" r="6" stroke="#4fc3f7"/><circle cx="15" cy="12" r="6" stroke="#ffb74d" stroke-dasharray="2 2"/></svg>`,
+      MOD_ARRAY: `<svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2"><rect x="3" y="11" width="8" height="8" rx="1"/><rect x="8" y="7" width="8" height="8" rx="1" stroke-opacity="0.7"/><rect x="13" y="3" width="8" height="8" rx="1" stroke-opacity="0.4"/></svg>`,
+      MOD_SOLIDIFY: `<svg viewBox="0 0 24 24" fill="none" stroke="#4fc3f7" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><rect x="7" y="7" width="10" height="10" rx="1" stroke="#ffb74d"/></svg>`,
+      MATERIAL: `<svg viewBox="0 0 24 24"><defs><linearGradient id="matGrad" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#ff7043"/><stop offset="50%" stop-color="#ab47bc"/><stop offset="100%" stop-color="#29b6f6"/></linearGradient></defs><circle cx="12" cy="12" r="9" fill="url(#matGrad)" stroke="#ffffff" stroke-width="1.5"/><ellipse cx="9" cy="8" rx="3" ry="1.5" fill="#ffffff" fill-opacity="0.6"/></svg>`,
+      EDITMODE_HLT: `<svg viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2"><path d="M5 8l7-4 7 4-7 4-7-4zM5 8v8l7 4 7-4V8"/><circle cx="5" cy="8" r="2" fill="#ffffff"/><circle cx="19" cy="8" r="2" fill="#ffffff"/><circle cx="12" cy="12" r="2" fill="#ffffff"/><circle cx="12" cy="20" r="2" fill="#ffffff"/><circle cx="12" cy="4" r="2" fill="#ffffff"/></svg>`,
+      OBJECT_DATAMODE: `<svg viewBox="0 0 24 24" fill="none" stroke="#ff9800" stroke-width="2"><path d="M5 8l7-4 7 4-7 4-7-4zM5 8v8l7 4 7-4V8"/><path d="M12 12v8"/></svg>`,
+      VIEW3D: `<svg viewBox="0 0 24 24" fill="none" stroke="#81c784" stroke-width="2"><circle cx="12" cy="12" r="2" fill="#81c784"/><path d="M12 12L4 18M12 12V3M12 12l8 6"/></svg>`,
+      PROPERTIES: `<svg viewBox="0 0 24 24" fill="none" stroke="#90caf9" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="8" cy="6" r="2" fill="#90caf9"/><circle cx="16" cy="12" r="2" fill="#90caf9"/><circle cx="10" cy="18" r="2" fill="#90caf9"/></svg>`,
+      OUTLINER: `<svg viewBox="0 0 24 24" fill="none" stroke="#ce93d8" stroke-width="2"><path d="M4 6h3M7 6v12M7 12h5M7 18h5"/><rect x="13" y="4" width="7" height="4" rx="1" fill="#ce93d8"/><rect x="13" y="10" width="7" height="4" rx="1" fill="#ce93d8"/><rect x="13" y="16" width="7" height="4" rx="1" fill="#ce93d8"/></svg>`,
+      ADD: `<svg viewBox="0 0 24 24" fill="none" stroke="#4caf50" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="9" stroke-width="1.8"/><path d="M12 8v8M8 12h8"/></svg>`,
+      TIME: `<svg viewBox="0 0 24 24" fill="none" stroke="#80deea" stroke-width="2"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 15"/></svg>`,
+      CAMERA_DATA: `<svg viewBox="0 0 24 24" fill="none" stroke="#e0e0e0" stroke-width="2"><path d="M3 8a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8z"/><polygon points="17 10 22 7 22 17 17 14 17 10" fill="#e0e0e0"/></svg>`,
+      LIGHT_DATA: `<svg viewBox="0 0 24 24" fill="none" stroke="#ffeb3b" stroke-width="2" stroke-linecap="round"><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/><circle cx="12" cy="12" r="4" fill="#ffeb3b" fill-opacity="0.4"/></svg>`,
+      WORLD: `<svg viewBox="0 0 24 24" fill="none" stroke="#4db6ac" stroke-width="2"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="4" ry="9"/><path d="M3 12h18"/></svg>`,
+      RENDER_RESULT: `<svg viewBox="0 0 24 24" fill="none" stroke="#ba68c8" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="8.5" cy="9.5" r="1.5" fill="#ba68c8"/><polyline points="21 16 16 11 8 19"/><polyline points="14 17 11 14 4 20"/></svg>`,
+      OUTPUT: `<svg viewBox="0 0 24 24" fill="none" stroke="#9fa8da" stroke-width="2"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>`,
+      PHYSICS: `<svg viewBox="0 0 24 24" fill="none" stroke="#ff8a65" stroke-width="2"><circle cx="12" cy="8" r="5" fill="#ff8a65" fill-opacity="0.3"/><path d="M4 19c4-6 12-6 16 0" stroke-dasharray="2 2"/><line x1="2" y1="21" x2="22" y2="21"/></svg>`,
+      PARTICLES: `<svg viewBox="0 0 24 24" fill="#ffd54f"><circle cx="12" cy="12" r="2.5"/><circle cx="6" cy="7" r="1.5"/><circle cx="18" cy="8" r="1.8"/><circle cx="7" cy="17" r="1.2"/><circle cx="17" cy="16" r="2"/><circle cx="12" cy="4" r="1"/></svg>`,
+      CONSTRAINT: `<svg viewBox="0 0 24 24" fill="none" stroke="#ef5350" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>`,
+      ORIENTATION_GLOBAL: `<svg viewBox="0 0 24 24" fill="none" stroke="#81c784" stroke-width="2"><path d="M12 2v10m0 0l7 4m-7-4l-7 4"/><circle cx="12" cy="12" r="2" fill="#81c784"/></svg>`,
+      SELECT_SET: `<svg viewBox="0 0 24 24" fill="none" stroke="#ffca28" stroke-width="2" stroke-dasharray="3 3"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>`,
+      TRASH: `<svg viewBox="0 0 24 24" fill="none" stroke="#e57373" stroke-width="2" stroke-linecap="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+      CHECKMARK: `<svg viewBox="0 0 24 24" fill="none" stroke="#66bb6a" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`,
+      MONKEY: `<svg viewBox="0 0 24 24" fill="none" stroke="#ffb74d" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="4" cy="10" r="2.5"/><circle cx="20" cy="10" r="2.5"/><path d="M7 16c2 3 8 3 10 0"/><path d="M5 12a7 7 0 0 1 14 0c0 4-3 7-7 7s-7-3-7-7z"/><circle cx="9" cy="11" r="1.5" fill="#ffb74d"/><circle cx="15" cy="11" r="1.5" fill="#ffb74d"/></svg>`,
+      CURSOR: `<svg viewBox="0 0 24 24" fill="none" stroke="#ef5350" stroke-width="2"><circle cx="12" cy="12" r="7" stroke-dasharray="3 3"/><circle cx="12" cy="12" r="2" fill="#ffffff"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/></svg>`,
+      BONE_DATA: `<svg viewBox="0 0 24 24" fill="none" stroke="#81c784" stroke-width="2"><circle cx="12" cy="5" r="3"/><circle cx="12" cy="19" r="3"/><path d="M12 8v8"/></svg>`
+    };
+
+    const BLENDER_ICON_ALIASES = {
+      wrench: "MODIFIER",
+      modifiers: "MODIFIER",
+      modifier: "MODIFIER",
+      subsurf: "MOD_SUBSURF",
+      subdivision: "MOD_SUBSURF",
+      bevel: "MOD_BEVEL",
+      mirror: "MOD_MIRROR",
+      boolean: "MOD_BOOLEAN",
+      array: "MOD_ARRAY",
+      solidify: "MOD_SOLIDIFY",
+      mat: "MATERIAL",
+      material: "MATERIAL",
+      materials: "MATERIAL",
+      shader: "MATERIAL",
+      shading: "MATERIAL",
+      viewport: "VIEW3D",
+      view_3d: "VIEW3D",
+      view3d: "VIEW3D",
+      properties: "PROPERTIES",
+      outliner: "OUTLINER",
+      timeline: "TIME",
+      dopesheet: "TIME",
+      time: "TIME",
+      add: "ADD",
+      camera: "CAMERA_DATA",
+      light: "LIGHT_DATA",
+      lamp: "LIGHT_DATA",
+      world: "WORLD",
+      environment: "WORLD",
+      render: "RENDER_RESULT",
+      output: "OUTPUT",
+      physics: "PHYSICS",
+      particles: "PARTICLES",
+      particle: "PARTICLES",
+      constraint: "CONSTRAINT",
+      constraints: "CONSTRAINT",
+      suzanne: "MONKEY",
+      monkey: "MONKEY",
+      cursor: "CURSOR",
+      bone: "BONE_DATA",
+      bones: "BONE_DATA",
+      armature: "BONE_DATA",
+      edit: "EDITMODE_HLT",
+      edit_mode: "EDITMODE_HLT",
+      object: "OBJECT_DATAMODE",
+      object_mode: "OBJECT_DATAMODE",
+      delete: "TRASH",
+      remove: "TRASH"
+    };
+
+    function getBlenderIconSVG(iconId) {
+      if (!iconId || iconId === "NONE") return "";
+      let key = String(iconId).trim();
+      const alias = BLENDER_ICON_ALIASES[key.toLowerCase()];
+      if (alias) key = alias;
+      const upper = key.toUpperCase();
+      const svg = BLENDER_SVG_ICONS[upper] || (upper.startsWith("MOD_") ? BLENDER_SVG_ICONS.MODIFIER : null);
+      if (svg) {
+        return `<span class="blender-icon-svg" title="${upper}">${svg}</span>`;
+      }
+      return "";
+    }
+
     function renderSteps(steps, currentIdx) {
       if (!steps || steps.length === 0) {
         stepsContainer.innerHTML = `
@@ -656,15 +790,13 @@
         const hero = document.createElement("div");
         hero.className = "step-hero";
         
-        const iconBadge = current.icon && current.icon !== "NONE" ? `<span class="step-icon-badge">[${current.icon}]</span>` : "";
-
         hero.innerHTML = `
           <div class="step-hero-header">
             <span>Current Action • Step ${currentIdx + 1}</span>
-            ${iconBadge}
           </div>
           <div class="step-hero-instruction">
-            <span>${current.instruction}</span>
+            ${getBlenderIconSVG(current.icon)}
+            <span style="flex: 1;">${current.instruction}</span>
           </div>
           ${current.description ? `<div class="step-hero-desc">${current.description}</div>` : ""}
         `;
@@ -677,16 +809,15 @@
         card.className = `step-card ${idx === currentIdx ? "active" : ""}`;
         card.onclick = () => selectStep(idx);
 
-        const iconBadge = step.icon && step.icon !== "NONE" ? `<span class="step-icon-badge">[${step.icon}]</span>` : "";
         const statusIcon = step.is_done ? "✅" : (idx === currentIdx ? "📍" : "⚪");
 
         card.innerHTML = `
           <div class="step-card-top">
             <span>${statusIcon} Step ${idx + 1}</span>
-            ${iconBadge}
           </div>
           <div class="step-card-instruction">
-            <span>${step.instruction}</span>
+            ${getBlenderIconSVG(step.icon)}
+            <span style="flex: 1;">${step.instruction}</span>
           </div>
         `;
         stepsContainer.appendChild(card);
