@@ -932,6 +932,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     let ttsRate = parseFloat(localStorage.getItem("bm_tts_rate")) || 1.15;
     let lastSpokenStep = -1;
     let isInitialLoad = true;
+    let isUserDictating = false;
+    let isRemoteDictating = false;
 
     // Elements
     const chatFeed = document.getElementById("chatFeed");
@@ -1069,10 +1071,13 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     function updateUI(data) {
       // Remote Mic / Walkie-Talkie synchronization from Blender N-Panel
       if (data.remote_mic_active && !isUserDictating) {
+        isRemoteDictating = true;
         if (typeof startDictation === "function") {
           startDictation();
         }
-      } else if (!data.remote_mic_active && isUserDictating && !data.remote_mic_send) {
+      } else if (!data.remote_mic_active && isRemoteDictating && !data.remote_mic_send) {
+        // Only stop if dictation was initiated remotely from Blender N-panel!
+        isRemoteDictating = false;
         if (typeof stopDictation === "function") {
           stopDictation(false);
         }
@@ -1080,7 +1085,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
       if (data.remote_mic_send) {
         fetch("/api/remote_mic_ack", { method: "POST" }).catch(() => {});
-        if (isUserDictating && typeof stopDictation === "function") {
+        if (isRemoteDictating && typeof stopDictation === "function") {
+          isRemoteDictating = false;
           stopDictation(false);
         }
         setTimeout(() => {
@@ -1555,7 +1561,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     const micStatusText = document.getElementById("micStatusText");
     const micBars = document.querySelectorAll(".mic-wave-bar");
 
-    let isUserDictating = false;
+    // (isUserDictating & isRemoteDictating declared at top-level)
     let recognitionInstance = null;
     let mediaStream = null;
     let audioContext = null;
@@ -1637,6 +1643,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
     function stopDictation(focusInput = true) {
       isUserDictating = false;
+      isRemoteDictating = false;
       if (silenceCheckTimer) {
         clearTimeout(silenceCheckTimer);
         silenceCheckTimer = null;
@@ -1827,8 +1834,10 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       if (SpeechRecognition) {
         btnMic.onclick = () => {
           if (!isUserDictating) {
+            isRemoteDictating = false;
             startDictation();
           } else {
+            isRemoteDictating = false;
             stopDictation(true);
           }
         };
