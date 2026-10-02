@@ -35,13 +35,27 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: var(--bg-dark);
+      background-color: #141414; /* Deep outer canvas for wide displays */
       color: var(--text-main);
       height: 100vh;
       display: flex;
-      flex-direction: column;
+      justify-content: center;
       overflow: hidden;
       user-select: none;
+    }
+
+    /* App Frame Container (Constrains on Wide Screens) */
+    .app-container {
+      width: 100%;
+      max-width: 1440px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      background-color: var(--bg-dark);
+      border-left: 1px solid var(--border);
+      border-right: 1px solid var(--border);
+      box-shadow: 0 0 35px rgba(0, 0, 0, 0.45);
+      position: relative;
     }
 
     /* App Header */
@@ -138,13 +152,14 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       color: var(--amber);
     }
 
-    /* Two-Column Workspace Layout */
+    /* Two-Column Resizable Workspace Layout */
     .workspace {
-      display: grid;
-      grid-template-columns: 45% 55%;
+      display: flex;
+      flex-direction: row;
       flex: 1;
       height: calc(100vh - 52px);
       overflow: hidden;
+      position: relative;
     }
 
     /* Columns */
@@ -156,11 +171,45 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .col-chat {
-      border-right: 1px solid var(--border);
+      width: 45%;
+      min-width: 320px;
+      max-width: calc(100% - 360px);
+      flex-shrink: 0;
       background-color: #212121;
     }
 
+    /* Resizer / Draggable Splitter */
+    .resizer {
+      width: 10px;
+      margin: 0 -5px;
+      cursor: col-resize;
+      background: transparent;
+      position: relative;
+      z-index: 20;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s ease;
+    }
+
+    .resizer::after {
+      content: "";
+      width: 2px;
+      height: 100%;
+      background-color: var(--border);
+      transition: background-color 0.15s, box-shadow 0.15s;
+    }
+
+    .resizer:hover::after,
+    .resizer.resizing::after {
+      background-color: var(--accent);
+      box-shadow: 0 0 8px rgba(71, 114, 179, 0.8);
+    }
+
     .col-steps {
+      flex: 1;
+      min-width: 360px;
       background-color: var(--bg-panel);
     }
 
@@ -693,104 +742,111 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 </head>
 <body>
 
-  <!-- Top App Header -->
-  <header>
-    <div class="brand">
-      <span class="brand-icon">🎨</span>
-      <span>BlenderMentor Companion</span>
-    </div>
+  <div class="app-container">
 
-    <div class="status-badge">
-      <div id="statusDot" class="status-dot"></div>
-      <span id="sceneStatus">Connecting to Blender...</span>
-    </div>
-
-    <div class="header-actions">
-      <button id="btnTts" title="Toggle audio step read-aloud">
-        <span>🔊</span> Voice Readout
-      </button>
-      <select id="voiceSelect" class="voice-select" title="Choose high-quality speech voice"></select>
-      <button id="btnClear" title="Clear conversation and steps">
-        <span>🗑️</span> Clear
-      </button>
-    </div>
-  </header>
-
-  <!-- Dual-Column Workspace -->
-  <div class="workspace">
-
-    <!-- Column 1: Chat & Voice Interaction -->
-    <div class="col col-chat">
-      <div class="col-header">
-        <span>💬 Conversation & Guidance</span>
-        <span id="chatCount" class="step-tag">0 messages</span>
+    <!-- Top App Header -->
+    <header>
+      <div class="brand">
+        <span class="brand-icon">🎨</span>
+        <span>BlenderMentor Companion</span>
       </div>
 
-      <div id="chatFeed" class="chat-scroll">
-        <div class="chat-bubble ai">
-          <div class="chat-bubble-author">BlenderMentor</div>
-          Hello! I am your companion tutor on your second screen. You can type or use your voice to ask anything about your Blender scene!
-        </div>
+      <div class="status-badge">
+        <div id="statusDot" class="status-dot"></div>
+        <span id="sceneStatus">Connecting to Blender...</span>
       </div>
 
-      <div id="thinkingBanner" class="thinking-banner">
-        <div class="thinking-spinner"></div>
-        <span id="thinkingText">Mentor is thinking...</span>
-      </div>
-
-      <div id="followupBanner" class="followup-banner">
-        <span id="followupText">❓ Asking about Step 1</span>
-        <button id="btnCancelFollowup" class="btn-cancel-followup" title="Cancel follow-up (return to regular chat)" onclick="cancelFollowup()">✕ Cancel</button>
-      </div>
-
-      <div id="micStatusBanner" class="mic-status-banner">
-        <div class="mic-wave-container">
-          <span class="mic-wave-bar"></span>
-          <span class="mic-wave-bar"></span>
-          <span class="mic-wave-bar"></span>
-          <span class="mic-wave-bar"></span>
-          <span class="mic-wave-bar"></span>
-        </div>
-        <span id="micStatusText" class="mic-status-text">Listening... speak your question</span>
-        <span id="micDeviceBadge" class="mic-device-badge" title="Active audio input device">Mic: Detecting...</span>
-        <button id="btnStopMic" class="btn-cancel-followup" title="Finish voice dictation" onclick="stopDictation(true)">✕ Stop</button>
-      </div>
-
-      <div class="chat-input-bar">
-        <button id="btnMic" class="btn-mic" title="Click to speak (Voice Input)">
-          <span>🎙️</span>
+      <div class="header-actions">
+        <button id="btnTts" title="Toggle audio step read-aloud">
+          <span>🔊</span> Voice Readout
         </button>
-        <div class="input-wrapper">
-          <input type="text" id="chatInput" placeholder="Ask a question or request guidance..." autocomplete="off" />
-        </div>
-        <button id="btnSend" class="primary">
-          <span>➤</span>
+        <select id="voiceSelect" class="voice-select" title="Choose high-quality speech voice"></select>
+        <button id="btnClear" title="Clear conversation and steps">
+          <span>🗑️</span> Clear
         </button>
       </div>
-    </div>
+    </header>
 
-    <!-- Column 2: Guided Steps & Visual Navigator -->
-    <div class="col col-steps">
-      <div class="col-header">
-        <span id="questTitle">🎯 Guided Steps</span>
-        <div class="col-header-tools">
-          <button id="btnPrev" title="Previous Step">◀ Prev</button>
-          <button id="btnNext" title="Next Step">Next ▶</button>
-          <button id="btnYoutube" style="display: none;" title="Search YouTube for this tutorial">
-            <span>▶</span> YouTube
+    <!-- Dual-Column Workspace -->
+    <div class="workspace" id="workspace">
+
+      <!-- Column 1: Chat & Voice Interaction -->
+      <div class="col col-chat" id="colChat">
+        <div class="col-header">
+          <span>💬 Conversation & Guidance</span>
+          <span id="chatCount" class="step-tag">0 messages</span>
+        </div>
+
+        <div id="chatFeed" class="chat-scroll">
+          <div class="chat-bubble ai">
+            <div class="chat-bubble-author">BlenderMentor</div>
+            Hello! I am your companion tutor on your second screen. You can type or use your voice to ask anything about your Blender scene!
+          </div>
+        </div>
+
+        <div id="thinkingBanner" class="thinking-banner">
+          <div class="thinking-spinner"></div>
+          <span id="thinkingText">Mentor is thinking...</span>
+        </div>
+
+        <div id="followupBanner" class="followup-banner">
+          <span id="followupText">❓ Asking about Step 1</span>
+          <button id="btnCancelFollowup" class="btn-cancel-followup" title="Cancel follow-up (return to regular chat)" onclick="cancelFollowup()">✕ Cancel</button>
+        </div>
+
+        <div id="micStatusBanner" class="mic-status-banner">
+          <div class="mic-wave-container">
+            <span class="mic-wave-bar"></span>
+            <span class="mic-wave-bar"></span>
+            <span class="mic-wave-bar"></span>
+            <span class="mic-wave-bar"></span>
+            <span class="mic-wave-bar"></span>
+          </div>
+          <span id="micStatusText" class="mic-status-text">Listening... speak your question</span>
+          <span id="micDeviceBadge" class="mic-device-badge" title="Active audio input device">Mic: Detecting...</span>
+          <button id="btnStopMic" class="btn-cancel-followup" title="Finish voice dictation" onclick="stopDictation(true)">✕ Stop</button>
+        </div>
+
+        <div class="chat-input-bar">
+          <button id="btnMic" class="btn-mic" title="Click to speak (Voice Input)">
+            <span>🎙️</span>
+          </button>
+          <div class="input-wrapper">
+            <input type="text" id="chatInput" placeholder="Ask a question or request guidance..." autocomplete="off" />
+          </div>
+          <button id="btnSend" class="primary">
+            <span>➤</span>
           </button>
         </div>
       </div>
 
-      <div id="stepsContainer" class="steps-container">
-        <div class="empty-state">
-          <div class="empty-icon">🧭</div>
-          <div style="font-size: 16px; font-weight: 600;">No active quest steps yet</div>
-          <div style="font-size: 13px; max-width: 320px;">
-            Ask a question in the chat column on the left (or speak via microphone) to generate step-by-step guidance!
+      <!-- Resizer / Draggable Splitter -->
+      <div class="resizer" id="resizer" title="Drag to resize panels (Double-click to reset)"></div>
+
+      <!-- Column 2: Guided Steps & Visual Navigator -->
+      <div class="col col-steps" id="colSteps">
+        <div class="col-header">
+          <span id="questTitle">🎯 Guided Steps</span>
+          <div class="col-header-tools">
+            <button id="btnPrev" title="Previous Step">◀ Prev</button>
+            <button id="btnNext" title="Next Step">Next ▶</button>
+            <button id="btnYoutube" style="display: none;" title="Search YouTube for this tutorial">
+              <span>▶</span> YouTube
+            </button>
+          </div>
+        </div>
+
+        <div id="stepsContainer" class="steps-container">
+          <div class="empty-state">
+            <div class="empty-icon">🧭</div>
+            <div style="font-size: 16px; font-weight: 600;">No active quest steps yet</div>
+            <div style="font-size: 13px; max-width: 320px;">
+              Ask a question in the chat column on the left (or speak via microphone) to generate step-by-step guidance!
+            </div>
           </div>
         </div>
       </div>
+
     </div>
 
   </div>
@@ -829,6 +885,58 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     const sceneStatus = document.getElementById("sceneStatus");
     const chatCount = document.getElementById("chatCount");
     const questTitle = document.getElementById("questTitle");
+
+    // Resizable Dual-Column Workspace
+    const workspace = document.getElementById("workspace");
+    const colChat = document.getElementById("colChat");
+    const resizer = document.getElementById("resizer");
+
+    // Restore saved width from localStorage
+    const savedChatWidth = localStorage.getItem("bm_chat_column_width");
+    if (savedChatWidth && colChat && workspace) {
+      const parsed = parseFloat(savedChatWidth);
+      if (parsed >= 300) {
+        colChat.style.width = `${parsed}px`;
+      }
+    }
+
+    let isResizing = false;
+
+    if (resizer && workspace && colChat) {
+      resizer.addEventListener("mousedown", (e) => {
+        isResizing = true;
+        resizer.classList.add("resizing");
+        document.body.style.cursor = "col-resize";
+        document.body.style.userSelect = "none";
+        e.preventDefault();
+      });
+
+      window.addEventListener("mousemove", (e) => {
+        if (!isResizing) return;
+        const rect = workspace.getBoundingClientRect();
+        const offsetX = e.clientX - rect.left;
+        const minChat = 320;
+        const maxChat = rect.width - 360;
+        const clamped = Math.max(minChat, Math.min(maxChat, offsetX));
+        colChat.style.width = `${clamped}px`;
+      });
+
+      window.addEventListener("mouseup", () => {
+        if (isResizing) {
+          isResizing = false;
+          resizer.classList.remove("resizing");
+          document.body.style.cursor = "";
+          document.body.style.userSelect = "";
+          localStorage.setItem("bm_chat_column_width", colChat.offsetWidth);
+        }
+      });
+
+      // Double-click resizer to reset to default 45%
+      resizer.addEventListener("dblclick", () => {
+        colChat.style.width = "45%";
+        localStorage.removeItem("bm_chat_column_width");
+      });
+    }
 
     // Poll Blender state every 400ms
     async function fetchState() {
