@@ -922,6 +922,17 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                 yt_op = yt_row.operator("blendermentor.open_youtube_search", text="Watch Tutorial", icon='URL')
                 yt_op.query = scene.bm_youtube_query
 
+            # If last step, show completion note
+            if current == total - 1:
+                fin_box = card.box()
+                fin_col = fin_box.column(align=True)
+                fin_lines = textwrap.wrap("This is the last step. Hope you've achieved what you wanted!", width=max(20, char_width - 8))
+                for idx_fl, fl in enumerate(fin_lines):
+                    if idx_fl == 0:
+                        fin_col.label(text=fl, icon='CHECKMARK')
+                    else:
+                        fin_col.label(text=f"  {fl}")
+
         elif total == 0:
             empty_box = layout.box()
             empty_col = empty_box.column(align=True)
@@ -1081,6 +1092,11 @@ class BLENDERMENTOR_PT_steps(bpy.types.Panel):
                     row_line.alignment = 'LEFT'
                     op = row_line.operator("blendermentor.step_goto", text=dline, icon='BLANK1', emboss=False)
                     op.step_index = i
+
+            # If last step in full checklist, show completion note
+            if i == len(scene.bm_steps) - 1:
+                fin_row = step_box.row()
+                fin_row.label(text="This is the last step. Hope you've achieved what you wanted!", icon='CHECKMARK')
 
 
 class BLENDERMENTOR_PT_devtools(bpy.types.Panel):

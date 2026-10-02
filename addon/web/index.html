@@ -529,6 +529,39 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       margin-bottom: 3px;
     }
 
+    .step-hero-completion {
+      margin-top: 10px;
+      padding: 10px 14px;
+      background: linear-gradient(135deg, rgba(76, 175, 80, 0.14), rgba(33, 150, 243, 0.08));
+      border: 1px solid rgba(76, 175, 80, 0.35);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      color: #c8e6c9;
+      line-height: 1.4;
+    }
+
+    .step-hero-completion strong {
+      color: #81c784;
+      display: inline-block;
+      margin-right: 4px;
+    }
+
+    .step-card-completion {
+      margin-top: 6px;
+      padding: 6px 10px;
+      background-color: rgba(76, 175, 80, 0.1);
+      border: 1px solid rgba(76, 175, 80, 0.25);
+      border-radius: 6px;
+      font-size: 12px;
+      color: #a5d6a7;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
     .step-card-reasoning {
       font-size: 12.5px;
       line-height: 1.45;
@@ -1237,13 +1270,14 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
       // Hero Card for current active step
       const current = steps[currentIdx];
+      const isLastHeroStep = (currentIdx === steps.length - 1);
       if (current) {
         const hero = document.createElement("div");
         hero.className = "step-hero";
         
         hero.innerHTML = `
           <div class="step-hero-header">
-            <span>Current Action • Step ${currentIdx + 1}</span>
+            <span>${isLastHeroStep ? "🏁 Final Action • Step " + (currentIdx + 1) : "Current Action • Step " + (currentIdx + 1)}</span>
             <div class="step-actions">
               ${current.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${currentIdx}, event)">💡 Highlight</button>` : ""}
               <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${currentIdx}, event)">❓ Ask</button>
@@ -1254,6 +1288,15 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             <span style="flex: 1;">${current.instruction}</span>
           </div>
           ${current.description ? `<div class="step-hero-desc"><strong>💡 Context & Reasoning</strong>${current.description}</div>` : ""}
+          ${isLastHeroStep ? `
+            <div class="step-hero-completion">
+              <span style="font-size: 20px;">🏁</span>
+              <div>
+                <strong>This is the last step.</strong>
+                <span>Hope you've achieved what you wanted! Feel free to ask anytime if you need adjustments or another task.</span>
+              </div>
+            </div>
+          ` : ""}
         `;
         stepsContainer.appendChild(hero);
       }
@@ -1264,11 +1307,12 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         card.className = `step-card ${idx === currentIdx ? "active" : ""}`;
         card.onclick = () => selectStep(idx);
 
+        const isLastCard = (idx === steps.length - 1);
         const statusIcon = step.is_done ? "✅" : (idx === currentIdx ? "📍" : "⚪");
 
         card.innerHTML = `
           <div class="step-card-top">
-            <span>${statusIcon} Step ${idx + 1}</span>
+            <span>${statusIcon} Step ${idx + 1}${isLastCard ? " (Final)" : ""}</span>
             <div class="step-actions">
               ${step.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${idx}, event)">💡</button>` : ""}
               <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${idx}, event)">❓</button>
@@ -1279,6 +1323,12 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             <span style="flex: 1;">${step.instruction}</span>
           </div>
           ${step.description ? `<div class="step-card-reasoning">${step.description}</div>` : ""}
+          ${isLastCard ? `
+            <div class="step-card-completion">
+              <span>🏁</span>
+              <span>This is the last step. Hope you've achieved what you wanted!</span>
+            </div>
+          ` : ""}
         `;
         stepsContainer.appendChild(card);
       });
@@ -1880,6 +1930,12 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       let textToSpeak = `Step ${idx + 1}: ${cleanSpeechText(step.instruction)}`;
       if (ttsMode === "full" && step.description) {
         textToSpeak += `. ${cleanSpeechText(step.description)}`;
+      }
+
+      // If this is the last step, add the completion message
+      const isLastStep = appState.steps && idx === appState.steps.length - 1;
+      if (isLastStep) {
+        textToSpeak += `. This is the last step. Hope you've achieved what you wanted!`;
       }
 
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
