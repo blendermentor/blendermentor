@@ -57,18 +57,15 @@ Rules:
     - Answer the question directly and conversationally in the "summary" field (1–2 concise sentences).
     - If the question requires actions in Blender, provide an updated, complete step list and set "focus_step_index" to the step where the action or clarification happens.
     - If it is purely conceptual with no Blender actions needed, provide a single step summarizing the key takeaway.
-12. You have access to TOOLS that let you inspect the Blender scene in more detail.
-    If the user's question requires information you don't have in the base context
-    (e.g. render settings, viewport shading, object details, selection info, addon status), call
-    the appropriate tool BEFORE providing your final answer.
-    If a task might rely on an add-on (e.g. Cell Fracture, Node Wrangler), call "check_addon_status"
-    to know whether it is already enabled or if you need to guide the user to enable it.
-    If you need to check specific properties, values, or systems (like camera focal lengths, 
-    custom properties, or compositor node trees) that are not covered by other tools, 
-    and the "evaluate_python_expression" tool is available, you MUST use it to check the 
-    exact value rather than asking the user to check it.
-    You may call multiple tools if needed. Only provide your final JSON answer when
-    you have enough information.
+12. You have access to TOOLS that let you inspect the Blender scene in more detail:
+    - BE ECONOMICAL WITH TOOLS: Call tools ONLY when strictly necessary to answer the user's specific question (aim for 1–2 tool calls maximum).
+    - NEVER call redundant tools if the base context, active scene data, or previous response already provides enough information.
+    - For follow-up questions or clarifications, answer directly using the previous context unless critical scene data is missing.
+    - If a task might rely on an add-on (e.g. Cell Fracture, Node Wrangler), call "check_addon_status" once to verify whether it is already enabled.
+    - If you need to check specific properties, values, or systems (like camera focal lengths, 
+      custom properties, or compositor node trees) that are not covered by other tools, 
+      and the "evaluate_python_expression" tool is available, you may use it to inspect the value.
+    - Always provide your final JSON answer as soon as you have enough information without continuing into unnecessary tool rounds.
 13. When a step involves a menu or action that has a keyboard shortcut, ALWAYS mention it.
     Format the instruction like: "Click Add in the header menu bar (or press Shift+A)".
     Common shortcuts: Shift+A (Add menu), X or Delete (delete), G (grab/move), R (rotate),
@@ -382,7 +379,38 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         # Append tool results to conversation
         contents.append({"role": "function", "parts": func_response_parts})
 
-    raise RuntimeError("AI exceeded maximum tool-calling rounds without producing a final answer.")
+    # Graceful synthesis fallback: force final text response without tools
+    try:
+        status_cb("Finalizing guidance...")
+        contents.append({
+            "role": "user",
+            "parts": [{"text": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."}]
+        })
+        body = json.dumps({
+            "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": 8192},
+        }).encode()
+
+        req = urllib.request.Request(
+            url, data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+            data = json.loads(resp.read().decode())
+        candidate = data["candidates"][0]["content"]
+        parts = candidate.get("parts", [])
+        text_parts = [
+            p.get("text", "") for p in parts
+            if "text" in p and not p.get("thought", False)
+        ]
+        if text_parts:
+            return "".join(text_parts)
+    except Exception:
+        pass
+
+    raise RuntimeError("AI was unable to complete guidance within the allowed tool rounds.")
 
 
 # ---------------------------------------------------------------------------
@@ -467,7 +495,41 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
         # Append tool results as a user message
         messages.append({"role": "user", "content": tool_results})
 
-    raise RuntimeError("AI exceeded maximum tool-calling rounds without producing a final answer.")
+    # Graceful synthesis fallback: force final text response without tools
+    try:
+        status_cb("Finalizing guidance...")
+        messages.append({
+            "role": "user",
+            "content": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
+        })
+        body = json.dumps({
+            "model": prefs.get_selected_model_id(),
+            "max_tokens": 8192,
+            "system": SYSTEM_PROMPT,
+            "messages": messages,
+        }).encode()
+
+        req = urllib.request.Request(url, data=body, headers={
+            "x-api-key": prefs.api_key,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
+        }, method="POST")
+
+        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+            data = json.loads(resp.read().decode())
+
+        content_blocks = data.get("content", [])
+        text_parts = [
+            block["text"]
+            for block in content_blocks
+            if block.get("type") == "text"
+        ]
+        if text_parts:
+            return "".join(text_parts)
+    except Exception:
+        pass
+
+    raise RuntimeError("AI was unable to complete guidance within the allowed tool rounds.")
 
 
 # ---------------------------------------------------------------------------
@@ -550,7 +612,33 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
                 "content": json.dumps(result),
             })
 
-    raise RuntimeError("AI exceeded maximum tool-calling rounds without producing a final answer.")
+    # Graceful synthesis fallback: force final text response without tools
+    try:
+        status_cb("Finalizing guidance...")
+        messages.append({
+            "role": "user",
+            "content": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
+        })
+        body = json.dumps({
+            "model": model,
+            "messages": messages,
+            "stream": False,
+        }).encode()
+
+        req = urllib.request.Request(
+            f"{host}/api/chat", data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            data = json.loads(resp.read().decode())
+        content = data.get("message", {}).get("content", "")
+        if content:
+            return content
+    except Exception:
+        pass
+
+    raise RuntimeError("AI was unable to complete guidance within the allowed tool rounds.")
 
 
 # ---------------------------------------------------------------------------
