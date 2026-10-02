@@ -524,6 +524,10 @@ class BLENDERMENTOR_OT_step_next(bpy.types.Operator):
         else:
             clear_all_highlights()
 
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+
         return {'FINISHED'}
 
 
@@ -538,6 +542,11 @@ class BLENDERMENTOR_OT_step_prev(bpy.types.Operator):
         if idx > 0:
             scene.bm_current_step = idx - 1
             _activate_step(scene, idx - 1)
+
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+
         return {'FINISHED'}
 
 
@@ -553,6 +562,9 @@ class BLENDERMENTOR_OT_step_goto(bpy.types.Operator):
         if 0 <= self.step_index < len(scene.bm_steps):
             scene.bm_current_step = self.step_index
             _activate_step(scene, self.step_index)
+            for window in bpy.context.window_manager.windows:
+                for area in window.screen.areas:
+                    area.tag_redraw()
         return {'FINISHED'}
 
 # ---------------------------------------------------------------------------
@@ -1197,8 +1209,8 @@ def register_keymaps():
     if not kc or not getattr(kc, "addon", None):
         return
 
-    # Add keymap items to 3D View (unbound conflict-free shortcuts)
-    km = kc.addon.keymaps.new(name="3D View", space_type='VIEW_3D')
+    # Add global keymap items to Window (unbound conflict-free shortcuts across all editors)
+    km = kc.addon.keymaps.new(name="Window", space_type='EMPTY')
 
     # Next Step: Alt + Right Arrow
     kmi_next = km.keymap_items.new(
@@ -1232,7 +1244,7 @@ def register():
     for cls in _classes:
         bpy.utils.register_class(cls)
 
-    # Register 3D Viewport shortcuts (Alt+Right / Alt+Left)
+    # Register global window shortcuts (Alt+Right / Alt+Left)
     try:
         register_keymaps()
     except Exception as e:
