@@ -147,6 +147,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                         })
 
                 followup_step = getattr(scene, "bm_followup_step", -1) if scene else -1
+                remote_mic_active = getattr(scene, "bm_remote_mic_active", False) if scene else False
+                remote_mic_send = getattr(scene, "bm_remote_mic_send", False) if scene else False
 
                 data = {
                     "active_object": act_obj.name if act_obj else None,
@@ -159,6 +161,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     "is_processing": is_processing,
                     "status_message": status_msg,
                     "youtube_query": youtube_query,
+                    "remote_mic_active": remote_mic_active,
+                    "remote_mic_send": remote_mic_send,
                 }
                 payload = json.dumps(data).encode("utf-8")
                 self.send_response(200)
@@ -291,6 +295,20 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             self._set_cors_headers()
             self.end_headers()
             self.wfile.write(json.dumps({"status": "cleared"}).encode("utf-8"))
+            return
+
+        # 4. Acknowledge / reset remote mic send flag
+        if self.path == "/api/remote_mic_ack":
+            def _reset_remote_send():
+                scene = getattr(bpy.context, "scene", None)
+                if scene:
+                    scene.bm_remote_mic_send = False
+                return None
+            bpy.app.timers.register(_reset_remote_send, first_interval=0.001)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
             return
 
         self.send_response(404)

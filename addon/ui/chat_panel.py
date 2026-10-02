@@ -3,6 +3,7 @@
 
 import bpy
 import json
+import time
 import textwrap
 import threading
 
@@ -428,6 +429,78 @@ class BLENDERMENTOR_OT_open_web_companion(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERMENTOR_OT_toggle_view(bpy.types.Operator):
+    bl_idname = "blendermentor.toggle_view"
+    bl_label = "Toggle Full View"
+    bl_description = "Toggle between compact Remote Control view and full Chat/Steps view"
+
+    def execute(self, context):
+        scene = context.scene
+        scene.bm_show_full_chat = not scene.bm_show_full_chat
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
+    """Hybrid Smart Mic: Click & hold to speak (walkie-talkie), or tap to toggle dictation."""
+    bl_idname = "blendermentor.hybrid_mic"
+    bl_label = "Smart Mic / Walkie-Talkie"
+    bl_description = "Hold to speak (walkie-talkie) or tap to toggle speech dictation in browser"
+
+    _press_time = 0.0
+
+    def invoke(self, context, event):
+        import time
+        scene = context.scene
+
+        # If already listening in browser, clicking again turns it off and sends
+        if scene.bm_remote_mic_active:
+            scene.bm_remote_mic_active = False
+            scene.bm_remote_mic_send = True
+            for area in context.screen.areas:
+                area.tag_redraw()
+            return {'FINISHED'}
+
+        # Turn ON mic in browser
+        scene.bm_remote_mic_active = True
+        scene.bm_remote_mic_send = False
+        self._press_time = time.time()
+
+        for area in context.screen.areas:
+            area.tag_redraw()
+
+        context.window_manager.modal_handler_add(self)
+        return {'RUNNING_MODAL'}
+
+    def modal(self, context, event):
+        import time
+        scene = context.scene
+
+        if event.type == 'LEFTMOUSE' and event.value == 'RELEASE':
+            elapsed = time.time() - self._press_time
+            if elapsed >= 0.4:
+                # Walkie-Talkie Mode: held and released -> stop & send!
+                scene.bm_remote_mic_active = False
+                scene.bm_remote_mic_send = True
+                for area in context.screen.areas:
+                    area.tag_redraw()
+                return {'FINISHED'}
+            else:
+                # Tap Mode: quick click -> stay active in toggle mode until tapped again!
+                for area in context.screen.areas:
+                    area.tag_redraw()
+                return {'FINISHED'}
+
+        elif event.type in {'ESC', 'RIGHTMOUSE'}:
+            # Cancel
+            scene.bm_remote_mic_active = False
+            scene.bm_remote_mic_send = False
+            for area in context.screen.areas:
+                area.tag_redraw()
+            return {'CANCELLED'}
+
+        return {'PASS_THROUGH'}
+
+
 class BLENDERMENTOR_OT_step_next(bpy.types.Operator):
     bl_idname = "blendermentor.step_next"
     bl_label = "Next"
@@ -741,17 +814,14 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         layout = self.layout
         row = layout.row(align=True)
 
-        # Open Web Companion button (great for second monitor)
-        row.operator("blendermentor.open_web_companion", text="", icon='URL')
+        # Open Web Companion button (great for dual monitors/tablets)
+        row.operator("blendermentor.open_web_companion", text="Browser", icon='URL')
 
-        # Pop-out / dock buttons in the header
-        row.operator("blendermentor.popout", text="", icon='WINDOW')
-
-        is_docked = context.scene.get("bm_is_docked", False)
-        if is_docked:
-            row.operator("blendermentor.undock", text="", icon='PANEL_CLOSE')
-        else:
-            row.operator("blendermentor.dock", text="", icon='SNAP_PEEL_OBJECT')
+        # Toggle Full View / Remote Control button
+        show_full = getattr(context.scene, "bm_show_full_chat", False)
+        toggle_icon = 'COLLAPSEMENU' if show_full else 'WINDOW'
+        toggle_text = "Remote" if show_full else "Full View"
+        row.operator("blendermentor.toggle_view", text=toggle_text, icon=toggle_icon)
 
         # DEV badge
         addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
@@ -761,29 +831,94 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
     def draw(self, context):
         layout = self.layout
         scene = bpy.context.scene
-
-        # --- Chat history ---
+        steps = scene.bm_steps
+        total = len(steps)
+        current = scene.bm_current_step
         char_width = _calc_char_width(context)
 
-        box = layout.box()
-        if len(scene.bm_chat_history) == 0:
-            box.label(text="Ask me anything about Blender!", icon='LIGHT')
+        # -------------------------------------------------------------
+        # 1. Hybrid Walkie-Talkie / Smart Mic Button
+        # -------------------------------------------------------------
+        mic_box = layout.box()
+        mic_col = mic_box.column(align=True)
+        mic_col.scale_y = 1.6
+        if scene.bm_remote_mic_active:
+            mic_col.alert = True
+            mic_col.operator("blendermentor.hybrid_mic", text="🔴 Listening... (Tap/Release to Send)", icon='REC')
         else:
-            col = box.column(align=True)
-            for msg in scene.bm_chat_history:
-                prefix = "You" if msg.is_user else "Mentor"
-                icon = 'USER' if msg.is_user else 'OUTLINER_OB_LIGHT'
+            mic_col.operator("blendermentor.hybrid_mic", text="🎙️ Hold to Speak (or Tap)", icon='SPEAKER')
 
-                # Wrap text
-                lines = textwrap.wrap(msg.text, width=char_width) or [msg.text]
-                for i, line in enumerate(lines):
-                    if i == 0:
-                        col.label(text=f"{prefix}: {line}", icon=icon)
-                    else:
-                        col.label(text=f"  {line}")
-                col.separator(factor=0.3)
+        # -------------------------------------------------------------
+        # 2. Step Navigator & Remote Controls
+        # -------------------------------------------------------------
+        nav_box = layout.box()
+        nav_row = nav_box.row(align=True)
+        nav_row.scale_y = 1.25
 
-        # --- Live status indicator (shown during AI processing) ---
+        prev_btn = nav_row.row(align=True)
+        prev_btn.enabled = (total > 0 and current > 0)
+        prev_btn.operator("blendermentor.step_prev", text="Prev", icon='TRIA_LEFT')
+
+        step_counter = f"Step {current + 1} of {total}" if total > 0 else "No Active Steps"
+        counter_label = nav_row.row(align=True)
+        counter_label.alignment = 'CENTER'
+        counter_label.label(text=step_counter)
+
+        next_btn = nav_row.row(align=True)
+        next_btn.enabled = (total > 0 and current < total - 1)
+        next_btn.operator("blendermentor.step_next", text="Next", icon='TRIA_RIGHT')
+
+        # Quick action icons on current step
+        if total > 0 and 0 <= current < total:
+            cur_step = steps[current]
+            if cur_step.highlight_json:
+                hl_btn = nav_row.row(align=True)
+                hl_op = hl_btn.operator("blendermentor.step_goto", text="", icon='LIGHT')
+                hl_op.step_index = current
+            ask_btn = nav_row.row(align=True)
+            ask_op = ask_btn.operator("blendermentor.ask_step", text="", icon='QUESTION')
+            ask_op.step_index = current
+
+        # -------------------------------------------------------------
+        # 3. Active Step Card (Title & Reasoning / Description)
+        # -------------------------------------------------------------
+        if total > 0 and 0 <= current < total:
+            step = steps[current]
+            card = layout.box()
+
+            # Instruction row with Blender icon
+            inst_row = card.row(align=True)
+            step_icon = step.icon if (step.icon and step.icon != "NONE") else 'LAYER_ACTIVE'
+            inst_lines = textwrap.wrap(step.instruction, width=max(20, char_width - 6))
+            for i, line in enumerate(inst_lines):
+                if i == 0:
+                    inst_row.label(text=line, icon=step_icon)
+                else:
+                    card.label(text=f"  {line}")
+
+            # Description / Reasoning box (exact same text as browser)
+            if step.description:
+                desc_box = card.box()
+                desc_col = desc_box.column(align=True)
+                desc_lines = textwrap.wrap(step.description, width=max(20, char_width - 8))
+                for line in desc_lines:
+                    desc_col.label(text=line)
+
+            # If YouTube tutorial is available for this step
+            if scene.bm_youtube_query:
+                yt_row = card.row()
+                yt_op = yt_row.operator("blendermentor.open_youtube_search", text="Watch Tutorial", icon='URL')
+                yt_op.query = scene.bm_youtube_query
+
+        elif total == 0:
+            empty_box = layout.box()
+            empty_col = empty_box.column(align=True)
+            empty_col.label(text="Companion Remote Ready", icon='WORLD')
+            empty_col.label(text="Hold mic or ask in browser to begin.")
+
+        # -------------------------------------------------------------
+        # 4. Live status indicator (Thinking...)
+        # -------------------------------------------------------------
         if scene.bm_is_processing:
             status_box = layout.box()
             status_row = status_box.row(align=True)
@@ -791,35 +926,64 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             status_msg = scene.bm_status_message or "Thinking..."
             status_row.label(text=f"⏳ {status_msg}", icon='SORTTIME')
 
-        # --- Follow-up indicator ---
+        # -------------------------------------------------------------
+        # 5. Follow-up banner (if active)
+        # -------------------------------------------------------------
         followup = scene.bm_followup_step
         if followup >= 0 and followup < len(scene.bm_steps):
             followup_box = layout.box()
             row = followup_box.row(align=True)
-            row.label(text=f"Asking about Step {followup + 1}",
-                      icon='QUESTION')
+            row.label(text=f"Asking about Step {followup + 1}", icon='QUESTION')
             row.operator("blendermentor.cancel_followup", text="", icon='X')
 
-        # --- Input + Send ---
-        row = layout.row(align=True)
-        row.enabled = not scene.bm_is_processing
-        row.prop(scene, "bm_input_text", text="")
-        row.operator("blendermentor.send_message", text="", icon='PLAY')
+        # -------------------------------------------------------------
+        # 6. Expanded Section (Only when bm_show_full_chat is True)
+        # -------------------------------------------------------------
+        if getattr(scene, "bm_show_full_chat", False):
+            layout.separator(factor=1.0)
+            exp_header = layout.row()
+            exp_header.label(text="Full Chat & History", icon='COMMUNITY')
 
+            # Chat history box
+            box = layout.box()
+            if len(scene.bm_chat_history) == 0:
+                box.label(text="No conversation history yet.", icon='INFO')
+            else:
+                col = box.column(align=True)
+                for msg in scene.bm_chat_history:
+                    prefix = "You" if msg.is_user else "Mentor"
+                    icon = 'USER' if msg.is_user else 'OUTLINER_OB_LIGHT'
+                    lines = textwrap.wrap(msg.text, width=char_width) or [msg.text]
+                    for i, line in enumerate(lines):
+                        if i == 0:
+                            col.label(text=f"{prefix}: {line}", icon=icon)
+                        else:
+                            col.label(text=f"  {line}")
+                    col.separator(factor=0.3)
 
+            # Input + Send
+            row = layout.row(align=True)
+            row.enabled = not scene.bm_is_processing
+            row.prop(scene, "bm_input_text", text="")
+            row.operator("blendermentor.send_message", text="", icon='PLAY')
 
-
-        # --- Clear button ---
-        layout.operator("blendermentor.clear_chat", text="Clear", icon='TRASH')
+            # Clear button
+            layout.operator("blendermentor.clear_chat", text="Clear", icon='TRASH')
 
 
 class BLENDERMENTOR_PT_steps(bpy.types.Panel):
-    bl_label = "Guided Steps"
+    bl_label = "Guided Steps (Full List)"
     bl_idname = "BLENDERMENTOR_PT_steps"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
     bl_category = "BlenderMentor"
     bl_order = 1
+
+    @classmethod
+    def poll(cls, context):
+        scene = context.scene
+        # Only show the full list of all steps when Expanded View is toggled ON!
+        return getattr(scene, "bm_show_full_chat", False) and len(scene.bm_steps) > 0
 
     def draw(self, context):
         layout = self.layout
@@ -1001,6 +1165,8 @@ _classes = (
     BLENDERMENTOR_OT_send_message,
     BLENDERMENTOR_OT_clear_chat,
     BLENDERMENTOR_OT_open_web_companion,
+    BLENDERMENTOR_OT_toggle_view,
+    BLENDERMENTOR_OT_hybrid_mic,
     BLENDERMENTOR_OT_step_next,
     BLENDERMENTOR_OT_step_prev,
     BLENDERMENTOR_OT_step_goto,

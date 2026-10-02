@@ -847,6 +847,29 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     function updateUI(data) {
+      // Remote Mic / Walkie-Talkie synchronization from Blender N-Panel
+      if (data.remote_mic_active && !isUserDictating) {
+        if (typeof startDictation === "function") {
+          startDictation();
+        }
+      } else if (!data.remote_mic_active && isUserDictating && !data.remote_mic_send) {
+        if (typeof stopDictation === "function") {
+          stopDictation(false);
+        }
+      }
+
+      if (data.remote_mic_send) {
+        fetch("/api/remote_mic_ack", { method: "POST" }).catch(() => {});
+        if (isUserDictating && typeof stopDictation === "function") {
+          stopDictation(false);
+        }
+        setTimeout(() => {
+          if (chatInput.value.trim()) {
+            sendChat(chatInput.value);
+          }
+        }, 180);
+      }
+
       // 1. Thinking status
       if (data.is_processing) {
         thinkingBanner.style.display = "flex";
@@ -1718,8 +1741,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       }
     };
 
-    // Auto-polling interval
-    setInterval(fetchState, 450);
+    // Auto-polling interval (fast 200ms for responsive remote control sync)
+    setInterval(fetchState, 200);
     fetchState();
   </script>
 </body>
