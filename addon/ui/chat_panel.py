@@ -504,7 +504,7 @@ class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
 class BLENDERMENTOR_OT_step_next(bpy.types.Operator):
     bl_idname = "blendermentor.step_next"
     bl_label = "Next"
-    bl_description = "Mark current step done and advance to next"
+    bl_description = "Advance to next step (Alt + Right Arrow)"
 
     def execute(self, context):
         scene = bpy.context.scene
@@ -530,7 +530,7 @@ class BLENDERMENTOR_OT_step_next(bpy.types.Operator):
 class BLENDERMENTOR_OT_step_prev(bpy.types.Operator):
     bl_idname = "blendermentor.step_prev"
     bl_label = "Prev"
-    bl_description = "Go back to previous step"
+    bl_description = "Go back to previous step (Alt + Left Arrow)"
 
     def execute(self, context):
         scene = bpy.context.scene
@@ -1184,9 +1184,59 @@ _classes = (
 
 
 
+# ---------------------------------------------------------------------------
+# Keymaps
+# ---------------------------------------------------------------------------
+
+_addon_keymaps = []
+
+
+def register_keymaps():
+    wm = bpy.context.window_manager
+    kc = getattr(wm, "keyconfigs", None)
+    if not kc or not getattr(kc, "addon", None):
+        return
+
+    # Add keymap items to 3D View (unbound conflict-free shortcuts)
+    km = kc.addon.keymaps.new(name="3D View", space_type='VIEW_3D')
+
+    # Next Step: Alt + Right Arrow
+    kmi_next = km.keymap_items.new(
+        "blendermentor.step_next",
+        type='RIGHT_ARROW',
+        value='PRESS',
+        alt=True
+    )
+    _addon_keymaps.append((km, kmi_next))
+
+    # Prev Step: Alt + Left Arrow
+    kmi_prev = km.keymap_items.new(
+        "blendermentor.step_prev",
+        type='LEFT_ARROW',
+        value='PRESS',
+        alt=True
+    )
+    _addon_keymaps.append((km, kmi_prev))
+
+
+def unregister_keymaps():
+    for km, kmi in _addon_keymaps:
+        try:
+            km.keymap_items.remove(kmi)
+        except Exception:
+            pass
+    _addon_keymaps.clear()
+
+
 def register():
     for cls in _classes:
         bpy.utils.register_class(cls)
+
+    # Register 3D Viewport shortcuts (Alt+Right / Alt+Left)
+    try:
+        register_keymaps()
+    except Exception as e:
+        print(f"[BlenderMentor] Warning: Could not register keymaps: {e}")
 
     # Dev tools properties
     bpy.types.Scene.bm_dev_highlight_target = bpy.props.StringProperty(
@@ -1196,7 +1246,10 @@ def register():
         name="Web Query", default=""
     )
 
+
 def unregister():
+    unregister_keymaps()
+
     try:
         del bpy.types.Scene.bm_dev_highlight_target
     except Exception:

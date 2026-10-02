@@ -1289,6 +1289,28 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     btnPrev.onclick = () => stepNav("prev");
     btnNext.onclick = () => stepNav("next");
 
+    // Global keyboard navigation: Alt + Arrow keys (or plain Left/Right when not typing)
+    window.addEventListener("keydown", (e) => {
+      const activeEl = document.activeElement;
+      const isTyping = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
+
+      if (e.altKey && (e.key === "ArrowRight" || e.code === "ArrowRight")) {
+        e.preventDefault();
+        stepNav("next");
+      } else if (e.altKey && (e.key === "ArrowLeft" || e.code === "ArrowLeft")) {
+        e.preventDefault();
+        stepNav("prev");
+      } else if (!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        if (e.key === "ArrowRight" || e.code === "ArrowRight") {
+          e.preventDefault();
+          stepNav("next");
+        } else if (e.key === "ArrowLeft" || e.code === "ArrowLeft") {
+          e.preventDefault();
+          stepNav("prev");
+        }
+      }
+    });
+
     // Robust Web Speech API Dictation with Live Audio Meter & Auto-Restart
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     const micStatusBanner = document.getElementById("micStatusBanner");
