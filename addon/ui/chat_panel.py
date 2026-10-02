@@ -266,7 +266,15 @@ def _apply_ai_response(scene, response: dict):
             s.icon = _resolve_step_icon(step_data.get("icon"), highlight, s.instruction)
 
 
-        scene.bm_current_step = 0
+        # Determine focus step index (1-indexed from AI, or fallback to active followup step)
+        focus_idx = 0
+        ai_focus = response.get("focus_step_index")
+        if isinstance(ai_focus, int) and 1 <= ai_focus <= len(steps):
+            focus_idx = ai_focus - 1
+        elif scene.bm_followup_step >= 0 and scene.bm_followup_step < len(steps):
+            focus_idx = scene.bm_followup_step
+
+        scene.bm_current_step = focus_idx
 
         summary = response.get("summary",
                                f"{len(steps)} steps ready — see below!")
@@ -276,8 +284,16 @@ def _apply_ai_response(scene, response: dict):
 
         scene.bm_last_ai_response = json.dumps(response)
 
-        if steps[0].get("highlight"):
-            trigger_highlight(steps[0]["highlight"])
+        # Trigger highlight on the focused step
+        if steps[focus_idx].get("highlight"):
+            trigger_highlight(steps[focus_idx]["highlight"])
+        else:
+            clear_all_highlights()
+
+        # Tag all areas for instant redraw
+        for window in bpy.context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
     else:
         reply = scene.bm_chat_history.add()
         reply.text = "The AI did not return any steps. Please try again."
@@ -757,8 +773,10 @@ def _build_followup_prompt(user_question, step_index, last_response_json, scene_
         f"Please directly ANSWER the user's question in your 'summary' field. "
         f"Then, provide a NEW complete set of steps that incorporates "
         f"any needed changes or clarifications based on their question. "
+        f"Set 'focus_step_index' to {step_index + 1} (or whichever step index in the new list directly addresses this query). "
         f"Do NOT repeat the previous response verbatim — adapt and improve it."
     )
+
 
 
 # ---------------------------------------------------------------------------

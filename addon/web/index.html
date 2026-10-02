@@ -1086,10 +1086,11 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       // TTS Read-aloud: AI conversational response first, then Step 1; or regular step transition
       if (ttsMode !== "off") {
         if (newAiResponseText) {
-          // A fresh AI response arrived in conversation: read it out first, then Step 1
-          const firstStep = (data.steps && data.steps.length > 0) ? data.steps[0] : null;
-          speakAiResponseThenStep(newAiResponseText, firstStep, 0);
-          lastSpokenStep = 0;
+          // A fresh AI response arrived in conversation: read it out first, then focused step
+          const activeIdx = (data.current_step >= 0 && data.steps && data.current_step < data.steps.length) ? data.current_step : 0;
+          const targetStep = (data.steps && data.steps.length > 0) ? data.steps[activeIdx] : null;
+          speakAiResponseThenStep(newAiResponseText, targetStep, activeIdx);
+          lastSpokenStep = activeIdx;
         } else if ((stepsChanged || stepIdxChanged) && data.steps && data.steps.length > 0 && data.current_step !== lastSpokenStep) {
           // User navigating between steps (Next / Prev / Card click)
           speakStep(data.steps[data.current_step], data.current_step);

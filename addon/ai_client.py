@@ -28,7 +28,7 @@ You are BlenderMentor, an expert Blender teacher embedded directly inside Blende
 
 Rules:
 1. NEVER perform actions in Blender yourself. Always guide the user to do it.
-2. Your FINAL response must be ONLY a valid JSON object matching the schema below. No prose, no markdown, no explanation outside the JSON.
+2. Your FINAL response must ALWAYS be formatted as a valid JSON object matching the schema below. All conversational chat, answers, explanations, and advice MUST reside inside the "summary" field. Never write commentary, markdown headers, or text outside the JSON.
 3. Break your guidance into clear numbered steps. Each step must contain a single action.
 4. Each step must have:
    - "instruction": a short, clear action (e.g. "Click Add Modifier")
@@ -40,19 +40,18 @@ Rules:
 7. Use the provided scene context to tailor your response.
 8. The "description" should provide useful context the user might not know — where to find things, what submenus look like, what an option does, etc.
 9. Include a "summary" field:
-   - For a normal request, provide a friendly sentence summarizing what you will help with.
-   - For a follow-up question, use this field to DIRECTLY ANSWER the user's question.
-   This is shown directly in the chat window as a conversational reply.
+   - Provide a warm, brief conversational reply (1–2 concise sentences) answering the user's question directly before they follow the steps.
+   - This is shown directly in the chat window as your conversational reply.
    Example: "Sure! Here's how to add a Subdivision Surface modifier to your Cube."
 10. The scene context includes "visible_editors" — a list of editor types currently
     visible on screen. If your steps reference an editor NOT in this list, you MUST
     first include a step instructing the user to open it (e.g. split an area, or
     change an existing editor's type via the editor type selector in its header).
     Only AFTER that step should you reference that editor in a highlight.
-11. When a follow-up question is provided with a previous response, answer the question
-    directly in the "summary" field. Then, provide an updated, complete step list that
-    incorporates the clarification or new requirements. Even if the user just asks a
-    conceptual question, always provide the full steps for the task.
+11. For follow-up or conceptual questions:
+    - Answer the question directly and conversationally in the "summary" field (1–2 concise sentences).
+    - If the question requires actions in Blender, provide an updated, complete step list and set "focus_step_index" to the step where the action or clarification happens.
+    - If it is purely conceptual with no Blender actions needed, provide a single step summarizing the key takeaway.
 12. You have access to TOOLS that let you inspect the Blender scene in more detail.
     If the user's question requires information you don't have in the base context
     (e.g. render settings, viewport shading, object details, selection info), call
@@ -86,6 +85,10 @@ Rules:
       step-by-step guidance for THIS user's scene.
     - If you use web/community tools, also call relevant scene tools (like
       get_object_details) so you can personalize the answer.
+17. Include a root-level "focus_step_index" integer field (1-indexed):
+    - For a new task starting from the beginning, set "focus_step_index": 1.
+    - For a follow-up or revised question targeting a specific step (e.g. Step 5), set "focus_step_index" to that step number (e.g. 5) so the UI and voice readout immediately jump to that step.
+18. Quotation Formatting: Inside "instruction" and "description" strings, use single quotes (e.g. 'Cube', 'Add Modifier') rather than unescaped double quotes to guarantee valid, unbroken JSON.
 
 HIGHLIGHT LEVELS (from most precise to least precise — always pick the MOST precise level that fits):
 
@@ -133,7 +136,7 @@ EXAMPLES of correct highlight usage:
     CORRECT:   {"level": "area", "space": "OUTLINER", "target": "outliner"}
 
 Response schema:
-{ "summary": "<friendly one-liner>", "youtube_search_query": "<string>", "steps": [ { "index": <int>, "instruction": "<string>", "description": "<string>", "icon": "<string|null>", "highlight": <object|null> } ] }
+{ "summary": "<warm, brief 1-2 sentence reply>", "focus_step_index": <int>, "youtube_search_query": "<string>", "steps": [ { "index": <int>, "instruction": "<string>", "description": "<string>", "icon": "<string|null>", "highlight": <object|null> } ] }
 """
 
 
@@ -303,6 +306,9 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
             "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
             "contents": contents,
             "tools": tools,
+            "generationConfig": {
+                "maxOutputTokens": 8192,
+            },
         }).encode()
 
         req = urllib.request.Request(
@@ -324,8 +330,11 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         function_calls = [p for p in parts if "functionCall" in p]
 
         if not function_calls:
-            # No tool calls — extract text response
-            text_parts = [p.get("text", "") for p in parts if "text" in p]
+            # No tool calls — extract text response (filter out thought parts)
+            text_parts = [
+                p.get("text", "") for p in parts
+                if "text" in p and not p.get("thought", False)
+            ]
             return "".join(text_parts)
 
         # Append model response to conversation
@@ -390,7 +399,7 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
     for round_num in range(MAX_TOOL_ROUNDS):
         body = json.dumps({
             "model": prefs.get_selected_model_id(),
-            "max_tokens": 4096,
+            "max_tokens": 8192,
             "system": SYSTEM_PROMPT,
             "tools": tools,
             "messages": messages,
@@ -542,7 +551,7 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
 # ---------------------------------------------------------------------------
 
 def _extract_outermost_json(text: str) -> str:
-    """Walk the string and find the first balanced { … } block."""
+    """Walk the string and find the first balanced { … } block, repairing truncation if needed."""
     start = text.find("{")
     if start == -1:
         raise ValueError("No JSON object found in AI response.")
@@ -570,20 +579,89 @@ def _extract_outermost_json(text: str) -> str:
             if depth == 0:
                 return text[start:i + 1]
 
+    # Attempt a repair on truncated JSON (if cut off mid-response)
+    candidate = text[start:].strip()
+    if in_string:
+        candidate += '"'
+    candidate += "}" * depth
+    try:
+        json.loads(candidate)
+        return candidate
+    except Exception:
+        pass
+
     raise ValueError("Unbalanced braces in AI response JSON.")
 
 
 def _parse_response(raw_text: str) -> dict:
-    """Parse the AI's raw text into a validated steps dict."""
-    json_str = _extract_outermost_json(raw_text)
-    data = json.loads(json_str)
+    """Parse the AI's raw text into a validated steps dict with graceful fallback."""
+    raw_text = raw_text.strip()
+    data = None
 
-    if "steps" not in data or not isinstance(data["steps"], list):
-        raise ValueError("AI response JSON missing 'steps' array.")
+    try:
+        json_str = _extract_outermost_json(raw_text)
+        data = json.loads(json_str)
+    except Exception:
+        # Graceful fallback: treat non-JSON conversational text as the chat summary
+        import re
+        clean_text = raw_text.replace("```json", "").replace("```", "").strip()
+        lines = [line.strip() for line in clean_text.splitlines() if line.strip()]
+
+        steps = []
+        step_idx = 1
+        summary_lines = []
+
+        for line in lines:
+            m = re.match(r"^(\d+)[\.\)]\s*(.*)", line)
+            if m:
+                instruction = m.group(2).strip()
+                steps.append({
+                    "index": step_idx,
+                    "instruction": instruction,
+                    "description": "",
+                    "icon": "INFO",
+                    "highlight": None
+                })
+                step_idx += 1
+            elif not steps:
+                summary_lines.append(line)
+
+        summary = " ".join(summary_lines).strip()
+        if not summary:
+            summary = clean_text[:200]
+
+        if not steps:
+            steps = [{
+                "index": 1,
+                "instruction": summary[:80] + ("..." if len(summary) > 80 else ""),
+                "description": clean_text,
+                "icon": "INFO",
+                "highlight": None
+            }]
+
+        data = {
+            "summary": summary,
+            "focus_step_index": 1,
+            "youtube_search_query": "",
+            "steps": steps
+        }
+
+    if "steps" not in data or not isinstance(data["steps"], list) or len(data["steps"]) == 0:
+        data["steps"] = [{
+            "index": 1,
+            "instruction": data.get("summary", "Guidance ready")[:80],
+            "description": data.get("summary", ""),
+            "icon": "INFO",
+            "highlight": None
+        }]
 
     # Ensure summary field exists
     if "summary" not in data or not data["summary"]:
         data["summary"] = f"{len(data['steps'])} steps ready — see below!"
+
+    # Ensure focus_step_index exists
+    if "focus_step_index" not in data or not isinstance(data["focus_step_index"], int):
+        data["focus_step_index"] = 1
 
     # Ensure youtube_search_query exists at the root
     if "youtube_search_query" not in data:
