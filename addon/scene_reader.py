@@ -12,6 +12,7 @@ import urllib.error
 import ssl
 import gzip
 import re
+import platform
 
 
 # ---------------------------------------------------------------------------
@@ -24,9 +25,15 @@ def get_basic_context() -> dict:
     scene = bpy.context.scene
     obj = bpy.context.active_object
 
+    # Environment & Version (guarantees accurate version-matched guidance)
+    ctx["blender_version"] = bpy.app.version_string
+    ctx["platform"] = "macOS" if platform.system() == "Darwin" else platform.system()
+
+    # Active scene essentials
     ctx["active_object"] = obj.name if obj else None
     ctx["active_object_type"] = obj.type if obj else None
     ctx["mode"] = bpy.context.mode
+    ctx["render_engine"] = scene.render.engine
 
     # Collect all editor types currently visible on screen
     try:
@@ -241,6 +248,46 @@ def evaluate_python_expression(expression: str) -> dict:
         return {"result": str(result)}
     except Exception as e:
         return {"error": str(e)}
+
+
+def check_addon_status(addon_name: str) -> dict:
+    """Check if a specific addon or extension is installed and enabled in Blender."""
+    try:
+        import addon_utils
+        clean = addon_name.lower().replace(" ", "_").replace("-", "_")
+        enabled_keys = list(bpy.context.preferences.addons.keys())
+        is_enabled = any(clean in k.lower() for k in enabled_keys)
+
+        installed = False
+        matching_title = ""
+        for mod in addon_utils.modules():
+            mod_name = getattr(mod, "__name__", "")
+            info = getattr(mod, "bl_info", {})
+            title = info.get("name", "")
+            if clean in mod_name.lower() or clean in title.lower():
+                installed = True
+                matching_title = title if title else mod_name
+                break
+
+        is_ext = bpy.app.version >= (4, 2)
+        pref_tab = "Get Extensions" if is_ext else "Add-ons"
+        menu_path = "Blender > Preferences" if platform.system() == "Darwin" else "Edit > Preferences"
+
+        return {
+            "addon_name": addon_name,
+            "matching_name": matching_title if matching_title else addon_name,
+            "is_enabled": is_enabled,
+            "is_installed": installed or is_enabled,
+            "blender_version": bpy.app.version_string,
+            "preferences_path": f"{menu_path} > {pref_tab}",
+            "how_to_enable": (
+                "Already enabled." if is_enabled else
+                f"Open {menu_path} > {pref_tab}, search for '{matching_title or addon_name}', and enable/install it."
+            )
+        }
+    except Exception as e:
+        return {"error": f"Failed to check addon status: {str(e)}"}
+
 
 
 # ---------------------------------------------------------------------------
@@ -472,6 +519,20 @@ TOOL_REGISTRY = {
             },
             "required": ["expression"]
         }
+    },
+    "check_addon_status": {
+        "function": check_addon_status,
+        "description": "Check if an addon or extension (e.g. 'cell_fracture', 'node_wrangler', 'bool_tool') is installed or enabled in Blender preferences, and get exact version-matched enablement instructions.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "addon_name": {
+                    "type": "string",
+                    "description": "The name or keyword of the addon/extension to check (e.g., 'cell_fracture', 'node_wrangler', 'bool_tool').",
+                }
+            },
+            "required": ["addon_name"],
+        },
     }
 }
 
