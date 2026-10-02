@@ -717,6 +717,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       opacity: 0.4;
     }
 
+    .tts-mode-select,
     .voice-select {
       background-color: var(--bg-card);
       border: 1px solid var(--border);
@@ -726,17 +727,25 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       font-size: 12px;
       outline: none;
       cursor: pointer;
-      max-width: 175px;
+      max-width: 220px;
       text-overflow: ellipsis;
-      transition: border-color 0.15s, background-color 0.15s;
+      transition: border-color 0.15s, background-color 0.15s, opacity 0.15s;
     }
 
+    .tts-mode-select:hover,
     .voice-select:hover {
       border-color: #666;
+      background-color: #3e3e3e;
     }
 
+    .tts-mode-select:focus,
     .voice-select:focus {
       border-color: var(--accent);
+    }
+
+    .tts-mode-select.muted {
+      color: var(--text-dim);
+      opacity: 0.65;
     }
   </style>
 </head>
@@ -757,9 +766,11 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       </div>
 
       <div class="header-actions">
-        <button id="btnTts" title="Toggle audio step read-aloud">
-          <span>🔊</span> Voice Readout
-        </button>
+        <select id="ttsModeSelect" class="tts-mode-select" title="Voice Readout Mode">
+          <option value="full">🔊 Readout: Title & Description</option>
+          <option value="title">🔉 Readout: Title Only</option>
+          <option value="off">🔇 Readout: Off</option>
+        </select>
         <select id="voiceSelect" class="voice-select" title="Choose high-quality speech voice"></select>
         <button id="btnClear" title="Clear conversation and steps">
           <span>🗑️</span> Clear
@@ -864,7 +875,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       mode: "OBJECT"
     };
 
-    let ttsEnabled = false;
+    // Voice Readout Mode: 'full' (Title & Description, default), 'title' (Title Only), 'off' (No Readout)
+    let ttsMode = localStorage.getItem("bm_tts_mode") || "full";
     let lastSpokenStep = -1;
     let isInitialLoad = true;
 
@@ -877,8 +889,26 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     const btnPrev = document.getElementById("btnPrev");
     const btnNext = document.getElementById("btnNext");
     const btnYoutube = document.getElementById("btnYoutube");
-    const btnTts = document.getElementById("btnTts");
+    const ttsModeSelect = document.getElementById("ttsModeSelect");
     const stepsContainer = document.getElementById("stepsContainer");
+
+    // Initialize Voice Readout Mode Spinner / Dropdown
+    if (ttsModeSelect) {
+      ttsModeSelect.value = ttsMode;
+      ttsModeSelect.classList.toggle("muted", ttsMode === "off");
+
+      ttsModeSelect.onchange = () => {
+        ttsMode = ttsModeSelect.value;
+        localStorage.setItem("bm_tts_mode", ttsMode);
+        ttsModeSelect.classList.toggle("muted", ttsMode === "off");
+
+        if (ttsMode === "off") {
+          if (window.speechSynthesis) window.speechSynthesis.cancel();
+        } else if (appState.steps && appState.steps.length > 0) {
+          speakStep(appState.steps[appState.current_step], appState.current_step);
+        }
+      };
+    }
     const thinkingBanner = document.getElementById("thinkingBanner");
     const thinkingText = document.getElementById("thinkingText");
     const statusDot = document.getElementById("statusDot");
@@ -1021,7 +1051,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       }
 
       // TTS Read-aloud: AI conversational response first, then Step 1; or regular step transition
-      if (ttsEnabled) {
+      if (ttsMode !== "off") {
         if (newAiResponseText) {
           // A fresh AI response arrived in conversation: read it out first, then Step 1
           const firstStep = (data.steps && data.steps.length > 0) ? data.steps[0] : null;
@@ -1783,7 +1813,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         selectedVoice = availableVoices.find(v => v.voiceURI === chosen) || null;
         if (selectedVoice) {
           localStorage.setItem("blendermentor_voice_uri", selectedVoice.voiceURI);
-          if (ttsEnabled) {
+          if (ttsMode !== "off") {
             window.speechSynthesis.cancel();
             const preview = new SpeechSynthesisUtterance("Voice updated.");
             preview.voice = selectedVoice;
@@ -1804,7 +1834,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     function speakAiResponseThenStep(aiText, step, idx) {
-      if (!window.speechSynthesis) return;
+      if (!window.speechSynthesis || ttsMode === "off") return;
       window.speechSynthesis.cancel();
 
       if (!selectedVoice && availableVoices.length > 0) {
@@ -1825,18 +1855,11 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       utterAi.rate = 0.98;
       utterAi.pitch = 1.0;
 
-      // 2. Once the mentor finish speaking the conversational response, speak Step 1
+      // 2. Once the mentor finishes speaking the conversational response, speak Step 1
       if (step) {
         utterAi.onend = () => {
-          if (!ttsEnabled) return;
-          const stepText = `Step ${idx + 1}: ${cleanSpeechText(step.instruction)}`;
-          const utterStep = new SpeechSynthesisUtterance(stepText);
-          if (selectedVoice) {
-            utterStep.voice = selectedVoice;
-          }
-          utterStep.rate = 0.98;
-          utterStep.pitch = 1.0;
-          window.speechSynthesis.speak(utterStep);
+          if (ttsMode === "off") return;
+          speakStep(step, idx);
         };
       }
 
@@ -1844,14 +1867,21 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     function speakStep(step, idx) {
-      if (!window.speechSynthesis || !step) return;
+      if (!window.speechSynthesis || !step || ttsMode === "off") return;
       window.speechSynthesis.cancel();
 
       if (!selectedVoice && availableVoices.length > 0) {
         selectedVoice = availableVoices[0];
       }
 
-      const textToSpeak = `Step ${idx + 1}: ${cleanSpeechText(step.instruction)}`;
+      // Voice Readout Mode:
+      // 'title': Step title/instruction only
+      // 'full': Step title/instruction + context and reasoning description
+      let textToSpeak = `Step ${idx + 1}: ${cleanSpeechText(step.instruction)}`;
+      if (ttsMode === "full" && step.description) {
+        textToSpeak += `. ${cleanSpeechText(step.description)}`;
+      }
+
       const utterance = new SpeechSynthesisUtterance(textToSpeak);
       if (selectedVoice) {
         utterance.voice = selectedVoice;
@@ -1860,16 +1890,6 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       utterance.pitch = 1.0;  // Balanced pitch
       window.speechSynthesis.speak(utterance);
     }
-
-    btnTts.onclick = () => {
-      ttsEnabled = !ttsEnabled;
-      btnTts.classList.toggle("active", ttsEnabled);
-      if (ttsEnabled && appState.steps.length > 0) {
-        speakStep(appState.steps[appState.current_step], appState.current_step);
-      } else {
-        window.speechSynthesis.cancel();
-      }
-    };
 
     // Auto-polling interval (fast 200ms for responsive remote control sync)
     setInterval(fetchState, 200);
