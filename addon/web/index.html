@@ -751,6 +751,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .tts-mode-select,
+    .tts-rate-select,
     .voice-select {
       background-color: var(--bg-card);
       border: 1px solid var(--border);
@@ -765,18 +766,26 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       transition: border-color 0.15s, background-color 0.15s, opacity 0.15s;
     }
 
+    .tts-rate-select {
+      max-width: 96px;
+      font-weight: 500;
+    }
+
     .tts-mode-select:hover,
+    .tts-rate-select:hover,
     .voice-select:hover {
       border-color: #666;
       background-color: #3e3e3e;
     }
 
     .tts-mode-select:focus,
+    .tts-rate-select:focus,
     .voice-select:focus {
       border-color: var(--accent);
     }
 
-    .tts-mode-select.muted {
+    .tts-mode-select.muted,
+    .tts-rate-select.muted {
       color: var(--text-dim);
       opacity: 0.65;
     }
@@ -803,6 +812,15 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
           <option value="full">🔊 Readout: Title & Description</option>
           <option value="title">🔉 Readout: Title Only</option>
           <option value="off">🔇 Readout: Off</option>
+        </select>
+        <select id="ttsRateSelect" class="tts-rate-select" title="Voice Readout Speed">
+          <option value="0.8">⚡ 0.8x</option>
+          <option value="1.0">⚡ 1.0x</option>
+          <option value="1.15">⚡ 1.15x</option>
+          <option value="1.25">⚡ 1.25x</option>
+          <option value="1.5">⚡ 1.5x</option>
+          <option value="1.75">⚡ 1.75x</option>
+          <option value="2.0">⚡ 2.0x</option>
         </select>
         <select id="voiceSelect" class="voice-select" title="Choose high-quality speech voice"></select>
         <button id="btnClear" title="Clear conversation and steps">
@@ -910,6 +928,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
     // Voice Readout Mode: 'full' (Title & Description, default), 'title' (Title Only), 'off' (No Readout)
     let ttsMode = localStorage.getItem("bm_tts_mode") || "full";
+    // Voice Readout Speed: defaults to 1.15x (adjustable from 0.8x to 2.0x)
+    let ttsRate = parseFloat(localStorage.getItem("bm_tts_rate")) || 1.15;
     let lastSpokenStep = -1;
     let isInitialLoad = true;
 
@@ -923,6 +943,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     const btnNext = document.getElementById("btnNext");
     const btnYoutube = document.getElementById("btnYoutube");
     const ttsModeSelect = document.getElementById("ttsModeSelect");
+    const ttsRateSelect = document.getElementById("ttsRateSelect");
     const stepsContainer = document.getElementById("stepsContainer");
 
     // Initialize Voice Readout Mode Spinner / Dropdown
@@ -934,11 +955,39 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         ttsMode = ttsModeSelect.value;
         localStorage.setItem("bm_tts_mode", ttsMode);
         ttsModeSelect.classList.toggle("muted", ttsMode === "off");
+        if (ttsRateSelect) {
+          ttsRateSelect.disabled = (ttsMode === "off");
+          ttsRateSelect.classList.toggle("muted", ttsMode === "off");
+        }
 
         if (ttsMode === "off") {
           if (window.speechSynthesis) window.speechSynthesis.cancel();
         } else if (appState.steps && appState.steps.length > 0) {
           speakStep(appState.steps[appState.current_step], appState.current_step);
+        }
+      };
+    }
+
+    // Initialize Voice Readout Speed Dropdown
+    if (ttsRateSelect) {
+      ttsRateSelect.value = ttsRate.toString();
+      if (!ttsRateSelect.value) {
+        ttsRateSelect.value = "1.15";
+        ttsRate = 1.15;
+      }
+      ttsRateSelect.disabled = (ttsMode === "off");
+      ttsRateSelect.classList.toggle("muted", ttsMode === "off");
+
+      ttsRateSelect.onchange = () => {
+        ttsRate = parseFloat(ttsRateSelect.value) || 1.15;
+        localStorage.setItem("bm_tts_rate", ttsRate);
+        if (ttsMode !== "off" && window.speechSynthesis) {
+          window.speechSynthesis.cancel();
+          const preview = new SpeechSynthesisUtterance(`Speed ${ttsRate}x`);
+          if (selectedVoice) preview.voice = selectedVoice;
+          preview.rate = ttsRate;
+          preview.pitch = 1.0;
+          window.speechSynthesis.speak(preview);
         }
       };
     }
@@ -1868,7 +1917,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             window.speechSynthesis.cancel();
             const preview = new SpeechSynthesisUtterance("Voice updated.");
             preview.voice = selectedVoice;
-            preview.rate = 0.98;
+            preview.rate = ttsRate;
             preview.pitch = 1.0;
             window.speechSynthesis.speak(preview);
           }
@@ -1903,7 +1952,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       if (selectedVoice) {
         utterAi.voice = selectedVoice;
       }
-      utterAi.rate = 0.98;
+      utterAi.rate = ttsRate;
       utterAi.pitch = 1.0;
 
       // 2. Once the mentor finishes speaking the conversational response, speak Step 1
@@ -1943,8 +1992,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       if (selectedVoice) {
         utterance.voice = selectedVoice;
       }
-      utterance.rate = 0.98;   // Natural human conversational pace
-      utterance.pitch = 1.0;  // Balanced pitch
+      utterance.rate = ttsRate;
+      utterance.pitch = 1.0;
       window.speechSynthesis.speak(utterance);
     }
 
