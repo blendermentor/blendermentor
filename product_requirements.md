@@ -48,18 +48,21 @@ The add-on configuration panel allows users to seamlessly set up and authenticat
 
 ---
 
-### 2.2 Interactive Chat Panel
-The N-panel (`View3D > Sidebar > BlenderMentor`) serves as the central hub of interaction.
+### 2.2 N-Panel Remote Control & Hybrid Mic
+The N-panel (`View3D > Sidebar > BlenderMentor`) serves as a compact, clutter-free Remote Control that pairs with the Browser Companion.
 
 *   **Status**: `IMPLEMENTED`
 *   **Key Features**:
-    *   **Clean Scrollable History**: Renders the conversation history with clean margins, word wrapping, and elegant icon-based role badges (`User` vs. `Mentor`).
+    *   **Compact Active Step Card**: Shows only the currently active step with its official Blender icon, action title, reasoning box, and quick action buttons (`💡 Highlight`, `❓ Ask`), keeping the 3D viewport clean.
+    *   **Full View / Remote Toggle**: Collapses the full conversation history and entire step checklist by default; toggled instantly via a header button.
+    *   **🎙️ Hybrid Walkie-Talkie Mic**:
+        *   **Press & Hold (>0.4s)**: Walkie-talkie mode — hold down to speak inside Blender, and release to stop dictation and auto-send the prompt to the browser companion.
+        *   **Tap (<0.4s)**: Toggle mode — tap to turn mic on, tap again to stop and send.
+    *   **Global Step Navigation Shortcuts**:
+        *   **`Alt + →`** (`Option + →` on macOS): Next step across all editors in Blender (`Window` keymap).
+        *   **`Alt + ←`** (`Option + ←` on macOS): Previous step globally across all editors.
+    *   **Browser Launcher**: One-click header button that opens the companion in the default web browser.
     *   **Persisted Session state**: Chat history is stored dynamically in `bpy.types.Scene`, persisting across files and editor windows.
-    *   **Chat Input**: Input text box and `Send` button. Supports pressing **Enter** in the 3D Viewport region to send.
-    *   **Window Management Controls**:
-        *   **Pop Out**: Opens a separate, floating window (`wm.window_new`) containing BlenderMentor.
-        *   **Dock**: Splits the active 3D Viewport (`screen.area_split`) to create a dedicated panel docked to the right side.
-        *   **Undock**: Safely closes the split region and reclaims viewport space.
     *   **Clear Chat**: A button that instantly clears conversation history, active steps, and removes all GPU overlays.
 
 ---
@@ -69,12 +72,13 @@ When the AI responds with a step-by-step resolution list, the navigator displays
 
 *   **Status**: `IMPLEMENTED`
 *   **Key Features**:
-    *   **Direct Step Click Selection**: The entire step label (e.g. `Step 1`, `Step 2`) behaves as a prominent, clickable button. Clicking any step header instantly activates it, updates the selection box color, and triggers its UI highlight.
+    *   **Direct Step Click Selection**: The entire step label behaves as a prominent, clickable button. Clicking any step header instantly activates it, updates the selection box color, and triggers its UI highlight.
     *   **Next/Prev Controls**: Clean `← Prev` and `Next →` buttons to walk through instructions sequentially. Marking a step as done changes its state box.
     *   **Friendly Summary Title**: The AI replies with a warm, conversational summary one-liner (e.g. *"Here is how to add a modifier to your Cube:"*) rather than a dry status report.
     *   **Step Indicator**: Displays current progress (e.g. `"Step 2 of 5"`).
+    *   **🏁 Final Step Celebration**: Visually celebrates the last step in both Blender and the browser (*"This is the last step. Hope you've achieved what you wanted!"*), and narrates it at the end of the voice readout.
     *   **Context-Aware Follow-Ups**: Each step includes an **Ask ❓** button. Clicking it places the chat input box into follow-up mode, and the next user message is automatically sent to the AI alongside the previous response as context.
-    *   **Automated Keyboard Shortcut Guidance**: The AI system prompt (Rule 13) strictly enforces presenting exact keyboard shortcuts alongside visual paths (e.g. *"Click Add in the header menu bar (or press Shift+A)"*) whenever a step involves a menu or action that has a keyboard shortcut to build double memory.
+    *   **Automated Keyboard Shortcut Guidance**: The AI system prompt strictly enforces presenting exact keyboard shortcuts alongside visual paths (e.g. *"Click Add in the header menu bar (or press Shift+A)"*) whenever a step involves a menu or action that has a keyboard shortcut to build double memory.
 
 ---
 
@@ -101,6 +105,18 @@ A collapsible section in the sidebar for rapid debugging and feature verificatio
     *   **Highlight Tester**: A text box and "Test Highlight" button allowing devs to type targets directly (e.g., `viewport`, `modifiers`, `outliner`) and verify pulsing immediately.
     *   **Step Navigator Tester**: A "Load Mock Steps" button that injects a hardcoded 5-step mock JSON list to test the navigation UI and overlays instantly without API charges.
     *   **Scene Context Inspector**: Renders a live, updated JSON payload showing exactly what scene data is fed to the AI.
+
+### 2.6 Dual-Column Browser Companion (`http://localhost:8765`)
+A self-hosted, lightweight web application served directly by Blender's internal Python runtime on port 8765.
+
+*   **Status**: `IMPLEMENTED`
+*   **Key Features**:
+    *   **Wide-Screen Responsive Frame**: Enforces a `1440px` maximum width container centered with a dark `#141414` backdrop to ensure comfortable typography on 1440p, 4K, and ultrawide displays.
+    *   **Interactive Draggable Splitter**: Resizable divider between the Chat and Steps columns with boundary limits, `localStorage` preference memory, and double-click reset to default 45% / 55% split.
+    *   **Official Blender Vector Icons**: 791 official vector SVG icons dynamically assigned based on step context and tool names.
+    *   **Hands-Free Speech-to-Text**: Client-side Web Speech API dictation with live 5-bar VU meter, input percentage display, and hardware mic device detection.
+    *   **3-Mode Voice Readout**: Header dropdown allowing users to select *Title & Description* (default), *Title Only*, or *Off* (muted).
+    *   **Bi-directional Synchronization**: Syncs active step, highlights, follow-ups, and chat history every 200ms with Blender's active scene state.
 
 ---
 

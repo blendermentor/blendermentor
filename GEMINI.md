@@ -78,23 +78,27 @@ On first use, the preferences panel guides the user to configure their AI provid
 
 ### 2. Chat Panel
 - Located in the **N-panel sidebar** of the 3D Viewport (`View3D > Sidebar > BlenderMentor` tab)
-- Conversation history displayed in a scrollable area
-- Text input field + Send button — **pressing Enter also sends** (keymap registered in VIEW_3D UI region)
-- AI replies with a **friendly one-liner summary** in the chat (e.g. "Sure! Here's how to add a modifier.") instead of a cold status message
-- "Clear" button to reset the conversation
+- Redesigned as a compact **Remote Control** that keeps your 3D viewport clean by default
+- Shows only the **Active Step Card** with its official Blender icon, instruction title, context/reasoning box, quick re-highlight (`💡`), and follow-up (`❓`) buttons
+- **Full View Toggle**: Top button toggles between compact Remote Control and full conversation stream & step checklist
+- **🎙️ Hybrid Walkie-Talkie Mic**:
+  - *Hold (>0.4s)*: Walkie-talkie mode — hold down to speak inside Blender, and release to stop dictation and send to the companion
+  - *Tap (<0.4s)*: Toggle mode — tap to turn mic on, tap again to stop and send
+- **Global Step Shortcuts**:
+  - **`Alt + →`** (`Option + →` on macOS): Advance to next step from *any* editor in Blender (3D View, Properties, Outliner, Nodes, Timeline)
+  - **`Alt + ←`** (`Option + ←` on macOS): Go back to previous step globally
+- **Browser Companion Button** (`Browser`): Launches the dual-column companion app on `http://127.0.0.1:8765` for second monitors and tablets
 - Conversation history stored in `bpy.types.Scene` — persists with the `.blend` file and is shared across all Blender editor windows
-- **Pop Out** button (header): opens BlenderMentor in a separate floating window — ideal for dual-monitor setups
-- **Dock** button (header): splits the 3D Viewport and creates a dedicated BlenderMentor panel docked to the right
-- **Undock** button (header, when docked): closes the docked panel and reclaims the space
 - **Follow-up questions**: each step has an **Ask ❓** button — clicking it puts the input into follow-up mode, and the AI receives the previous response as context to provide an improved, clarified step list
 
 ### 3. Step-by-Step Navigation
-When the AI responds, it returns a structured list of steps. The chat panel renders them as follows:
+When the AI responds, it returns a structured list of steps. The chat panel and browser companion render them as follows:
 
 - All steps are listed at once so the user can see the full picture before starting
 - A **step indicator** shows the current position (e.g. "Step 2 of 5")
 - **← Prev** and **Next →** buttons let the user move through steps at their own pace
-- The currently active step is visually distinct in the list (bold label or highlighted row)
+- The currently active step is visually distinct in the list (bold label or highlighted hero card)
+- **🏁 Final Step Celebration**: The final step is visually distinguished with a congratulatory completion message (*"This is the last step. Hope you've achieved what you wanted!"*), which is also spoken at the end of the audio readout
 - Each step has a hidden `highlight` field (not shown to the user) specifying which UI element to highlight when that step is active
 - Moving to a step automatically triggers the corresponding UI highlight
 - Highlights clear when the user moves to a different step
@@ -326,7 +330,13 @@ Refactored from a "dump all context" model to an agentic tool-calling architectu
 ### ✅ Milestone 9 — Web Search & External Knowledge
 Hybrid internet-backed knowledge system. Native AI search tools (Gemini `google_search`, Claude `web_search`) for broad web access. Client-side tools for Blender Stack Exchange API (`search_blender_community`) and official documentation (`fetch_blender_docs` with version-specific URLs via `bpy.app.version`). Global "Enable Web Search" toggle in preferences. Scene-grounded responses: AI always combines web/community results with the user's actual scene context. Dev tools: web search tester for Stack Exchange and docs fetch.
 
-### 📋 Milestone 10 — Public Release
+### ✅ Milestone 10 — Browser Companion & Voice Dictation
+Built-in lightweight threaded HTTP server (`server.py`) serving the dual-column web interface on port 8765. Features: 791 official vector Blender icons, real-time client-side voice dictation with a 5-bar live VU meter and hardware mic device detection, 3-mode Voice Readout (Title & Description, Title Only, Off), 1440px wide-screen max-width frame, and interactive draggable column resizer with `localStorage` persistence.
+
+### ✅ Milestone 11 — N-Panel Remote Control & Global Shortcuts
+Redesigned N-panel sidebar into a sleek, space-saving Remote Control. Displays the active step with icon, instruction, reasoning, and quick actions, while tucking full chat and step checklist behind a toggle. Hybrid walkie-talkie mic button (press-and-hold >0.4s to speak and auto-send, or tap to toggle). Global `Alt + →` and `Alt + ←` step navigation shortcuts registered in the top-level `Window` keymap to work across all Blender editors. Final step completion celebration across Blender, browser, and audio readout.
+
+### 📋 Milestone 12 — Public Release
 GitHub repo, README, contribution guide, GPL v3 license, cross-platform testing, Blender Extensions platform submission.
 
 ---

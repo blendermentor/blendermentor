@@ -8,30 +8,46 @@ In addition to the native 3D Viewport N-panel sidebar, BlenderMentor now include
 
 ## 🌟 Key Features
 
-### 🖥️ 1. Dual-Column Browser Companion (`http://localhost:8765`)
+### 🎮 1. N-Panel Remote Control & Hybrid Mic
+- **Compact Remote Mode**: Keeps your 3D Viewport workspace clean by condensing the sidebar into an efficient remote control showing only the active step, its official Blender icon, action title, reasoning, and quick re-highlight/ask buttons.
+- **Full View Toggle**: The full chat stream and complete step checklist are neatly tucked away and accessible via a single **Full View / Remote** toggle button.
+- **🎙️ Hybrid Walkie-Talkie Mic**:
+  - **Press & Hold (>0.4s)**: Walkie-talkie mode — hold down to speak your question inside Blender, and release to immediately stop dictation and dispatch the prompt to your browser companion.
+  - **Quick Tap (<0.4s)**: Toggle mode — tap once to turn the microphone on, speak at your leisure, and tap again to finish and send.
+- **Global Keyboard Navigation**:
+  - **`Alt + →`** (`Option + →` on macOS): Advances to the next step from *any* editor in Blender (3D View, Properties, Outliner, Shader Editor, Timeline).
+  - **`Alt + ←`** (`Option + ←` on macOS): Reverses to the previous step globally without requiring your cursor to hover over the 3D Viewport.
+
+### 🖥️ 2. Dual-Column Browser Companion (`http://localhost:8765`)
 - **Second-Screen Workflow**: Keep your 3D Viewport completely clutter-free while running your interactive mentor in any web browser on a second monitor, laptop, or tablet.
-- **Dual-Column Layout**: Dedicated conversation & voice guidance on the left, paired with an interactive guided step checklist and active hero card on the right.
+- **Wide-Screen Responsive Frame**: Automatically centers and constrains the workspace to a comfortable `1440px` max-width on 1440p, 4K, and ultrawide displays with a sleek dark backdrop (`#141414`) to prevent awkward, stretched text lines.
+- **Interactive Draggable Splitter**: Click and drag the vertical divider line to freely adjust the width of the Chat and Steps columns. Preserves your customized width across browser reloads via `localStorage`, and double-clicks to snap back to the default 45% / 55% split.
 - **Bi-directional Live Sync**: Step selection, highlights, follow-ups, and chat history synchronize instantly between Blender and your browser.
 - **Zero Configuration**: Built-in Python HTTP server running inside Blender — no Node.js, external servers, or terminal setups required.
 
-### 🎙️ 2. Voice Dictation & Live Audio VU Meter
+### 🎙️ 3. Voice Dictation & Live Audio VU Meter
 - **Hands-Free Speech-to-Text**: Click the mic or press a shortcut to speak your questions naturally while keeping your hands on your mouse and keyboard.
 - **Live Waveform & Audio Meter**: Visual 5-bar audio visualizer with real-time input percentage feedback so you know sound is being received.
 - **Hardware Device Detector**: Identifies active microphone devices and alerts you if a silent virtual device (such as BlackHole) is accidentally selected.
 - **Privacy-First**: Audio is transcribed client-side into text; raw voice recordings are never sent to external servers or stored in files.
 
-### 🔊 3. Natural Voice Readout (TTS)
-- **High-Quality Speech Synthesis**: Automatically prioritizes modern neural, natural, and enhanced system voices over legacy novelty synthesizers.
-- **Voice Selector Dropdown**: Choose your preferred narrator voice right from the browser header.
+### 🔊 4. Natural Voice Readout (3-Mode Selector)
+- **Three Readout Modes**:
+  - **`🔊 Readout: Title & Description`** *(Default)*: Speaks both the action instruction and the full context reasoning.
+  - **`🔉 Readout: Title Only`**: Fast, concise narration speaking only the core instruction title.
+  - **`🔇 Readout: Off`**: Mutes voice readout completely and dims the indicator.
+- **High-Quality Speech Synthesis**: Automatically prioritizes modern neural, natural, and enhanced system voices over legacy synthesizers.
+- **Voice Selector Dropdown**: Choose your preferred narrator voice right from the browser companion header.
 - **Conversational Pacing**: Reads the mentor's friendly conversational summary first before sequentially walking you through Step 1.
 
-### 🎨 4. Official Blender UI Vector Icons
+### 🎨 5. Official Blender UI Vector Icons
 - **791 Official SVG Icons**: Embedded vector icons extracted directly from [ui.blender.org/icons](https://ui.blender.org/icons).
 - **Contextual Visual Badges**: Step cards display the exact icons you see inside Blender (e.g. Modifier wrench, Bevel, Material preview, Light data, Outliner, etc.) to help you find tools faster.
 
-### 🎯 5. Guided Step-by-Step Navigation & Highlighting
+### 🎯 6. Guided Step Navigation & UI Highlighting
 - **Structured Guidance**: Complex 3D tasks are organized into manageable, numbered action steps.
 - **Step Reasoning & Context**: Each step provides clear action instructions plus detailed background context explaining *why* the setting matters and *where* to find submenus.
+- **🏁 Final Step Celebration**: The final step is visually celebrated in both the Blender Remote Control and Browser Companion, and naturally spoken aloud (*"This is the last step. Hope you've achieved what you wanted!"*).
 - **Dynamic UI Highlighting (Level 1–4)**:
   - **Level 1 Area Quad**: Highlights entire editor areas (Properties, Viewport, Timeline, Outliner).
   - **Level 2 Tab Icons**: Highlights specific navigation tabs (e.g. Modifier wrench tab in Properties).
@@ -40,7 +56,7 @@ In addition to the native 3D Viewport N-panel sidebar, BlenderMentor now include
 - **Show Highlight (`💡`)**: Re-trigger any step's visual highlight directly from the browser card or N-panel.
 - **Ask Follow-Up (`❓`)**: One-click clarification on any specific step with dedicated follow-up context.
 
-### 🧠 6. Agentic Tool Calling & Web Knowledge
+### 🧠 7. Agentic Tool Calling & Web Knowledge
 - **Two-Tier Context**: Sends minimal base context upfront and allows the AI to call on-demand tools (`get_render_settings`, `get_viewport_state`, `get_object_details`, `get_selection_info`, `get_active_tool_info`) only when necessary.
 - **Blender Community & Docs Integration**: Live lookup tools for Blender Stack Exchange solutions and version-specific Blender documentation.
 - **Provider Choice**: Use your own API keys for **Google Gemini** (default) or **Anthropic Claude**, or run local models with 100% privacy via **Ollama**. Model lists are fetched dynamically — no hardcoded models.
@@ -68,10 +84,12 @@ In addition to the native 3D Viewport N-panel sidebar, BlenderMentor now include
 
 ## 🛠 Usage Modes
 
-### Mode 1: 3D Viewport Sidebar (N-Panel)
+### Mode 1: 3D Viewport Remote Control (N-Panel)
 1. In the 3D Viewport, press `N` to expand the Sidebar and switch to the **BlenderMentor** tab.
-2. Type your question or request guidance (e.g., *"How do I add a bevel modifier to my cube?"*) and press **Enter**.
-3. Use the arrow controls or click any step to trigger the visual highlight overlay in your scene.
+2. Click **Browser** in the header to launch the Browser Companion on your second screen.
+3. Use the **🎙️ Hold to Speak (or Tap)** hybrid button to dictate questions hands-free.
+4. Navigate through steps using **`Alt + →`** (Next) and **`Alt + ←`** (Prev) from anywhere in Blender — the Remote Control, 3D highlights, and browser view stay in sync.
+5. Click **Full View** at the top whenever you want to expand the complete chat history or full step checklist.
 
 ### Mode 2: Browser Companion (Dual-Monitor / Tablet)
 1. With Blender open, navigate to **`http://localhost:8765`** in Google Chrome, Edge, Safari, or on your tablet.
@@ -79,7 +97,8 @@ In addition to the native 3D Viewport N-panel sidebar, BlenderMentor now include
 3. Review the dual-column guidance:
    - **Left Column**: Live chat conversation and reasoning status.
    - **Right Column**: Guided checklist, active step hero card with reasoning, **💡 Highlight** button, and **❓ Ask** follow-up button.
-4. Click **🔊 Voice Readout** to have steps read aloud as you work.
+   - **Center Resizer**: Drag the divider to resize columns, or double-click to reset.
+4. Use the **🔊 Readout Mode** dropdown to select your preferred narration depth (*Title & Description*, *Title Only*, or *Off*).
 
 ---
 
