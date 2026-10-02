@@ -31,14 +31,15 @@ In addition to the native 3D Viewport N-panel sidebar, BlenderMentor now include
 - **Hardware Device Detector**: Identifies active microphone devices and alerts you if a silent virtual device (such as BlackHole) is accidentally selected.
 - **Privacy-First**: Audio is transcribed client-side into text; raw voice recordings are never sent to external servers or stored in files.
 
-### 🔊 4. Natural Voice Readout (3-Mode Selector)
+### 🔊 4. Natural Voice Readout & Speed Control
 - **Three Readout Modes**:
   - **`🔊 Readout: Title & Description`** *(Default)*: Speaks both the action instruction and the full context reasoning.
   - **`🔉 Readout: Title Only`**: Fast, concise narration speaking only the core instruction title.
   - **`🔇 Readout: Off`**: Mutes voice readout completely and dims the indicator.
+- **⚡ Adjustable Readout Speed**: Fine-tune narration speed right from the header dropdown (`0.8x`, `1.0x`, `1.15x` [Default], `1.25x`, `1.5x`, `1.75x`, `2.0x`) with instant voice preview and persistent `localStorage` preference.
 - **High-Quality Speech Synthesis**: Automatically prioritizes modern neural, natural, and enhanced system voices over legacy synthesizers.
 - **Voice Selector Dropdown**: Choose your preferred narrator voice right from the browser companion header.
-- **Conversational Pacing**: Reads the mentor's friendly conversational summary first before sequentially walking you through Step 1.
+- **Smart Targeted Narration**: Reads the mentor's friendly conversational summary first, and on follow-ups automatically starts reading from the revised step (`focus_step_index`) rather than restarting from Step 1.
 
 ### 🎨 5. Official Blender UI Vector Icons
 - **791 Official SVG Icons**: Embedded vector icons extracted directly from [ui.blender.org/icons](https://ui.blender.org/icons).
@@ -54,11 +55,14 @@ In addition to the native 3D Viewport N-panel sidebar, BlenderMentor now include
   - **Level 3 Region Overlay**: Targets editor headers, toolbars, and sidebars.
   - **Level 4 Panel/Menu Injection**: Injects visual `◀ HERE` indicators inside menus and panels.
 - **Show Highlight (`💡`)**: Re-trigger any step's visual highlight directly from the browser card or N-panel.
-- **Ask Follow-Up (`❓`)**: One-click clarification on any specific step with dedicated follow-up context.
+- **Ask Follow-Up (`❓`)**: One-click clarification on any specific step with dedicated follow-up context and immediate step focus.
 
-### 🧠 7. Agentic Tool Calling & Web Knowledge
+### 🧠 7. Agentic Tool Calling, Version Awareness & Resilient AI
+- **Exact Version & OS Grounding**: Passes your exact `blender_version`, operating system `platform` (macOS/Windows/Linux), and active `render_engine` in the base context. The AI provides definitive, version-matched instructions (e.g. Extensions vs Add-ons in Blender 4.2+, `Blender > Preferences` on macOS vs `Edit > Preferences` on Windows) without vague conditional hedging.
+- **Addon & Extension Checker (`check_addon_status`)**: On-demand tool that checks whether required add-ons (Cell Fracture, Node Wrangler, Rigify, Bool Tool) are installed or enabled before instructing you to enable them.
 - **Two-Tier Context**: Sends minimal base context upfront and allows the AI to call on-demand tools (`get_render_settings`, `get_viewport_state`, `get_object_details`, `get_selection_info`, `get_active_tool_info`) only when necessary.
 - **Blender Community & Docs Integration**: Live lookup tools for Blender Stack Exchange solutions and version-specific Blender documentation.
+- **Resilient Tool Loop & Fallback**: High 8192 token limit, tool-economy directives, smart truncation repair, and a graceful forced synthesis round that guarantees you never get cutoff errors or exceed maximum tool rounds.
 - **Provider Choice**: Use your own API keys for **Google Gemini** (default) or **Anthropic Claude**, or run local models with 100% privacy via **Ollama**. Model lists are fetched dynamically — no hardcoded models.
 
 ---

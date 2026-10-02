@@ -241,6 +241,9 @@ A minimal dict included with every request:
 
 ```json
 {
+  "blender_version": "5.1.0",
+  "platform": "macOS",
+  "render_engine": "BLENDER_EEVEE",
   "active_object": "Cube",
   "active_object_type": "MESH",
   "mode": "OBJECT",
@@ -255,6 +258,7 @@ The AI is given tool declarations and can call any of these during the conversat
 
 | Tool Name | When AI Calls It |
 |---|---|
+| `check_addon_status(addon_name)` | Checks if required add-on/extension (Cell Fracture, Node Wrangler, etc.) is enabled/installed |
 | `get_render_settings` | Questions about rendering, performance, output quality |
 | `get_viewport_state` | Questions about viewport appearance, shading, overlays |
 | `get_object_details(object_name)` | Questions about a specific object's modifiers, materials, mesh data |
@@ -263,6 +267,7 @@ The AI is given tool declarations and can call any of these during the conversat
 | `get_world_and_lighting` | Questions about lighting, environment, background |
 | `search_blender_community(query)` | User asks a how-to question that may have community solutions (Stack Exchange) |
 | `fetch_blender_docs(page_path)` | AI needs exact documentation for a feature, setting, or workflow (version-matched) |
+| `evaluate_python_expression(expr)` | Inspects deep properties, node trees, or settings when other tools don't cover it |
 
 ### Native Search Tools (provider-handled, zero client code)
 
@@ -333,8 +338,8 @@ Hybrid internet-backed knowledge system. Native AI search tools (Gemini `google_
 ### ✅ Milestone 10 — Browser Companion & Voice Dictation
 Built-in lightweight threaded HTTP server (`server.py`) serving the dual-column web interface on port 8765. Features: 791 official vector Blender icons, real-time client-side voice dictation with a 5-bar live VU meter and hardware mic device detection, 3-mode Voice Readout (Title & Description, Title Only, Off), 1440px wide-screen max-width frame, and interactive draggable column resizer with `localStorage` persistence.
 
-### ✅ Milestone 11 — N-Panel Remote Control & Global Shortcuts
-Redesigned N-panel sidebar into a sleek, space-saving Remote Control. Displays the active step with icon, instruction, reasoning, and quick actions, while tucking full chat and step checklist behind a toggle. Hybrid walkie-talkie mic button (press-and-hold >0.4s to speak and auto-send, or tap to toggle). Global `Alt + →` and `Alt + ←` step navigation shortcuts registered in the top-level `Window` keymap to work across all Blender editors. Final step completion celebration across Blender, browser, and audio readout.
+### ✅ Milestone 11 — N-Panel Remote Control, Speed Controls & Version Awareness
+Redesigned N-panel sidebar into a sleek, space-saving Remote Control. Displays the active step with icon, instruction, reasoning, and quick actions, while tucking full chat and step checklist behind a toggle. Hybrid walkie-talkie mic button (press-and-hold >0.4s to speak and auto-send, or tap to toggle). Global `Alt + →` and `Alt + ←` step navigation shortcuts registered in the top-level `Window` keymap to work across all Blender editors. Final step completion celebration across Blender, browser, and audio readout. Added ⚡ Voice Readout Speed selector (`0.8x`–`2.0x`) with audible preview and persistence. Full Blender version (`bpy.app.version_string`) and OS platform awareness for 100% version-matched advice without hedging. On-demand `check_addon_status` tool. Targeted follow-up focus (`focus_step_index`) with speech resuming at the revised step. Resilient AI parser with truncation auto-repair, 8192 token limit, and forced final synthesis tool safety loop.
 
 ### 📋 Milestone 12 — Public Release
 GitHub repo, README, contribution guide, GPL v3 license, cross-platform testing, Blender Extensions platform submission.
