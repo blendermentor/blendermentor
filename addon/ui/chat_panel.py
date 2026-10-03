@@ -2,10 +2,20 @@
 # BlenderMentor — Chat panel, step navigator, and dev tools
 
 import bpy
+import bpy.utils.previews
 import json
+import os
 import time
 import textwrap
 import threading
+
+_preview_collections = {}
+
+def get_logo_icon_id():
+    pcoll = _preview_collections.get("main")
+    if pcoll and "logo" in pcoll:
+        return pcoll["logo"].icon_id
+    return 0
 
 from ..ai_client import ask_ai
 from ..scene_reader import get_basic_context_json, get_scene_context
@@ -833,7 +843,7 @@ def _activate_step(scene, index):
 # ---------------------------------------------------------------------------
 
 class BLENDERMENTOR_PT_chat(bpy.types.Panel):
-    bl_label = "BlenderMentor"
+    bl_label = ""
     bl_idname = "BLENDERMENTOR_PT_chat"
     bl_space_type = 'VIEW_3D'
     bl_region_type = 'UI'
@@ -844,8 +854,11 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         layout = self.layout
         row = layout.row(align=True)
 
-        # Open Web Companion button
-        row.operator("blendermentor.open_web_companion", text="Browser", icon='URL')
+        logo_id = get_logo_icon_id()
+        if logo_id:
+            row.label(text="BlenderMentor", icon_value=logo_id)
+        else:
+            row.label(text="BlenderMentor", icon='WINDOW')
 
         # DEV badge
         addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
@@ -871,11 +884,19 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             start_col = start_box.column(align=True)
             start_col.scale_y = 1.35
             start_col.label(text="Browser Companion Not Connected", icon='INFO')
-            start_col.operator(
-                "blendermentor.open_web_companion",
-                text="Start BlenderMentor",
-                icon='WINDOW'
-            )
+            logo_id = get_logo_icon_id()
+            if logo_id:
+                start_col.operator(
+                    "blendermentor.open_web_companion",
+                    text="Start BlenderMentor",
+                    icon_value=logo_id
+                )
+            else:
+                start_col.operator(
+                    "blendermentor.open_web_companion",
+                    text="Start BlenderMentor",
+                    icon='WINDOW'
+                )
             layout.separator(factor=0.5)
 
         # -------------------------------------------------------------
@@ -1172,6 +1193,17 @@ def unregister_keymaps():
 
 
 def register():
+    # Load custom icon preview collection
+    try:
+        pcoll = bpy.utils.previews.new()
+        icons_dir = os.path.join(os.path.dirname(__file__), "..", "icons")
+        logo_path = os.path.join(icons_dir, "logo.png")
+        if os.path.exists(logo_path):
+            pcoll.load("logo", logo_path, 'IMAGE')
+        _preview_collections["main"] = pcoll
+    except Exception as e:
+        print(f"[BlenderMentor] Warning: Could not load preview collection: {e}")
+
     for cls in _classes:
         bpy.utils.register_class(cls)
 
@@ -1204,3 +1236,10 @@ def unregister():
 
     for cls in reversed(_classes):
         bpy.utils.unregister_class(cls)
+
+    for pcoll in _preview_collections.values():
+        try:
+            bpy.utils.previews.remove(pcoll)
+        except Exception:
+            pass
+    _preview_collections.clear()

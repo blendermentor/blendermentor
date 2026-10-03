@@ -15,6 +15,7 @@ bl_info = {
     "category": "3D View",
 }
 
+import bpy
 from . import preferences
 from .state import conversation
 from .ui import chat_panel

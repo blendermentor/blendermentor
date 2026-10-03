@@ -92,7 +92,7 @@ On first use, the preferences panel guides the user to configure their AI provid
   - **`Alt + ↓`** (`Option + ↓` on macOS): Cancel voice dictation without sending (transcribed text remains in the text box for editing; pressing again clears the box)
   - **`Alt + →`** (`Option + →` on macOS): Advance to next step from *any* editor in Blender (3D View, Properties, Outliner, Nodes, Timeline)
   - **`Alt + ←`** (`Option + ←` on macOS): Go back to previous step globally
-- **Browser Companion Button** (`Browser`): Launches the dual-column companion app on `http://127.0.0.1:8765` for full chat history, speech synthesis, and dual-monitor workflow
+- **BlenderMentor Branding**: Custom logo integrated into the N-panel header (to the left of the title) and the Browser Companion (header & favicon)
 - Conversation history stored in `bpy.types.Scene` — persists with the `.blend` file and is shared across all Blender editor windows
 - **Follow-up questions**: each step has an **Ask ❓** button — clicking it puts the input into follow-up mode, and the AI receives the previous response as context to provide an improved, clarified step list
 
@@ -298,6 +298,12 @@ blendermentor/
     ├── preferences.py               # AddonPreferences: provider, API key, fetched models, developer mode, web search toggle
     ├── ai_client.py                 # Agentic tool-calling loop for Gemini / Claude / Ollama + native search tools + JSON parsing
     ├── scene_reader.py              # Modular: base context + on-demand tool functions + web tools (Stack Exchange, docs fetch) + tool registry
+    ├── server.py                    # Lightweight HTTP/WebSocket server for browser companion & voice dictation
+    ├── icons/                       # Custom plugin logo and icons
+    │   └── logo.png
+    ├── web/                         # Browser Companion web app (HTML/CSS/JS)
+    │   ├── index.html
+    │   └── logo.png
     ├── ui/
     │   ├── chat_panel.py            # N-panel: threaded AI calls, live status, conversation, step navigator, dev tools
     │   ├── highlight.py             # All three highlight levels: area GPU quad, tab coord map, panel prepend/append
