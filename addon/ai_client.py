@@ -556,13 +556,20 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
             "model": prefs.get_selected_model_id(),
             "max_tokens": 8192,
             "system": SYSTEM_PROMPT,
+            "tools": tools,
+            "tool_choice": {"type": "none"},
             "messages": messages,
-            # tools omitted to force final synthesis
+            "thinking": {
+                "block_binding": {
+                    "prefix_mismatch_behavior": "drop_block"
+                }
+            }
         }).encode()
 
         req = urllib.request.Request(url, data=body, headers={
             "x-api-key": prefs.api_key,
             "anthropic-version": "2023-06-01",
+            "anthropic-beta": "thinking-binding-controls-2026-08-01",
             "content-type": "application/json",
         }, method="POST")
 
