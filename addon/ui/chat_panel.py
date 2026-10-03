@@ -980,15 +980,19 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         input_text = scene.bm_input_text.strip()
         if input_text:
             lines = textwrap.wrap(input_text, width=max(18, char_width - 4))
-            if len(lines) > 1 or len(input_text) > 25:
+            if len(lines) > 1 or len(input_text) > 20:
                 text_box = layout.box()
                 text_col = text_box.column(align=True)
                 text_col.scale_y = 0.88
+                card_icon = 'SOUND' if scene.bm_remote_mic_active else 'TEXT'
                 for idx_line, line in enumerate(lines):
-                    if idx_line == 0:
-                        text_col.label(text=line, icon='SPEECH')
-                    else:
-                        text_col.label(text=f"  {line}")
+                    try:
+                        if idx_line == 0:
+                            text_col.label(text=line, icon=card_icon)
+                        else:
+                            text_col.label(text=f"  {line}")
+                    except Exception:
+                        text_col.label(text=line)
                 layout.separator(factor=0.3)
 
         # -------------------------------------------------------------
