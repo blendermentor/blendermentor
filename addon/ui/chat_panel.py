@@ -927,19 +927,11 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             start_col = start_box.column(align=True)
             start_col.scale_y = 1.35
             start_col.label(text="Browser Companion Not Connected", icon='INFO')
-            logo_id = get_logo_icon_id()
-            if logo_id:
-                start_col.operator(
-                    "blendermentor.open_web_companion",
-                    text="Start BlenderMentor",
-                    icon_value=logo_id
-                )
-            else:
-                start_col.operator(
-                    "blendermentor.open_web_companion",
-                    text="Start BlenderMentor",
-                    icon='WINDOW'
-                )
+            start_col.operator(
+                "blendermentor.open_web_companion",
+                text="Start BlenderMentor",
+                icon='WINDOW'
+            )
             layout.separator(factor=0.5)
             return
 
