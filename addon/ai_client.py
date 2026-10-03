@@ -17,7 +17,7 @@ from .scene_reader import TOOL_REGISTRY, execute_tool
 # Constants
 # ---------------------------------------------------------------------------
 
-MAX_TOOL_ROUNDS = 6   # safety cap — prevent infinite loops
+MAX_TOOL_ROUNDS = 8   # safety cap — prevent infinite loops
 
 # ---------------------------------------------------------------------------
 # System prompt — enforces structured JSON from the AI
@@ -380,16 +380,16 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         contents.append({"role": "function", "parts": func_response_parts})
 
     # Graceful synthesis fallback: force final text response without tools
+    fallback_err = None
     try:
         status_cb("Finalizing guidance...")
-        contents.append({
-            "role": "user",
-            "parts": [{"text": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."}]
-        })
+        # In Gemini API, the function response turn must be answered by model next.
+        # Calling without tools forces Gemini to output model text!
         body = json.dumps({
             "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
             "contents": contents,
             "generationConfig": {"maxOutputTokens": 8192},
+            # tools omitted to force final text generation
         }).encode()
 
         req = urllib.request.Request(
@@ -407,10 +407,12 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         ]
         if text_parts:
             return "".join(text_parts)
-    except Exception:
-        pass
+    except Exception as e:
+        fallback_err = e
+        print(f"[BlenderMentor] Gemini fallback synthesis error: {e}")
 
-    raise RuntimeError("AI was unable to complete guidance within the allowed tool rounds.")
+    err_detail = f": {fallback_err}" if fallback_err else ""
+    raise RuntimeError(f"AI was unable to complete guidance within the allowed tool rounds{err_detail}.")
 
 
 # ---------------------------------------------------------------------------
@@ -496,17 +498,35 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
         messages.append({"role": "user", "content": tool_results})
 
     # Graceful synthesis fallback: force final text response without tools
+    fallback_err = None
     try:
         status_cb("Finalizing guidance...")
-        messages.append({
-            "role": "user",
-            "content": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
-        })
+        # In Anthropic API, roles must strictly alternate: append text to the EXISTING user turn
+        if messages and messages[-1].get("role") == "user":
+            user_content = messages[-1].get("content")
+            instruction_block = {
+                "type": "text",
+                "text": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
+            }
+            if isinstance(user_content, list):
+                user_content.append(instruction_block)
+            else:
+                messages[-1]["content"] = [
+                    {"type": "text", "text": str(user_content)},
+                    instruction_block
+                ]
+        else:
+            messages.append({
+                "role": "user",
+                "content": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
+            })
+
         body = json.dumps({
             "model": prefs.get_selected_model_id(),
             "max_tokens": 8192,
             "system": SYSTEM_PROMPT,
             "messages": messages,
+            # tools omitted to force final synthesis
         }).encode()
 
         req = urllib.request.Request(url, data=body, headers={
@@ -526,10 +546,12 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
         ]
         if text_parts:
             return "".join(text_parts)
-    except Exception:
-        pass
+    except Exception as e:
+        fallback_err = e
+        print(f"[BlenderMentor] Claude fallback synthesis error: {e}")
 
-    raise RuntimeError("AI was unable to complete guidance within the allowed tool rounds.")
+    err_detail = f": {fallback_err}" if fallback_err else ""
+    raise RuntimeError(f"AI was unable to complete guidance within the allowed tool rounds{err_detail}.")
 
 
 # ---------------------------------------------------------------------------
@@ -635,10 +657,12 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
         content = data.get("message", {}).get("content", "")
         if content:
             return content
-    except Exception:
-        pass
+    except Exception as e:
+        fallback_err = e
+        print(f"[BlenderMentor] Ollama fallback synthesis error: {e}")
 
-    raise RuntimeError("AI was unable to complete guidance within the allowed tool rounds.")
+    err_detail = f": {fallback_err}" if fallback_err else ""
+    raise RuntimeError(f"AI was unable to complete guidance within the allowed tool rounds{err_detail}.")
 
 
 # ---------------------------------------------------------------------------
