@@ -33,8 +33,10 @@ def register():
     def _auto_open():
         import webbrowser
         try:
-            prefs = bpy.context.preferences.addons.get(__package__)
-            if prefs and getattr(prefs.preferences, "auto_open_browser", True):
+            addons = bpy.context.preferences.addons
+            pkg = __package__ or "addon"
+            pref_entry = addons.get(pkg) or addons.get("blendermentor") or addons.get("addon")
+            if pref_entry and getattr(pref_entry.preferences, "auto_open_browser", False):
                 if not server.is_companion_connected(timeout=2.0):
                     webbrowser.open("http://127.0.0.1:8765")
         except Exception as e:

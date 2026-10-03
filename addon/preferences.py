@@ -304,7 +304,7 @@ class BlenderMentorPreferences(bpy.types.AddonPreferences):
     auto_open_browser: bpy.props.BoolProperty(
         name="Auto-open Browser Companion",
         description="Automatically open the Browser Companion in your web browser when Blender starts",
-        default=True,
+        default=False,
     )
 
     def get_selected_model_id(self) -> str:

@@ -861,7 +861,25 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         char_width = _calc_char_width(context)
 
         # -------------------------------------------------------------
-        # 1. Voice Dictation Button (Microphone Only)
+        # 1. Connection Banner / Start BlenderMentor Button
+        # -------------------------------------------------------------
+        from ..server import is_companion_connected
+        connected = is_companion_connected(timeout=4.0)
+
+        if not connected:
+            start_box = layout.box()
+            start_col = start_box.column(align=True)
+            start_col.scale_y = 1.35
+            start_col.label(text="Browser Companion Not Connected", icon='INFO')
+            start_col.operator(
+                "blendermentor.open_web_companion",
+                text="Start BlenderMentor",
+                icon='WINDOW'
+            )
+            layout.separator(factor=0.5)
+
+        # -------------------------------------------------------------
+        # 2. Voice Dictation Button
         # -------------------------------------------------------------
         mic_box = layout.box()
         mic_col = mic_box.column(align=True)

@@ -74,12 +74,13 @@ On first use, the preferences panel guides the user to configure their AI provid
 - "Test Connection" button: fires a minimal API call to confirm the key and selected model work
 - Helper link: opens Google AI Studio or Anthropic Console in the browser
 - Developer Mode toggle (see section below)
-- Auto-open Browser Companion toggle (default: ON) — automatically opens the companion web app when Blender starts
+- Auto-open Browser Companion toggle (default: OFF) — automatically opens the companion web app when Blender starts
 - Keys are stored in `bpy.types.AddonPreferences` — never in the `.blend` file
 
 ### 2. Chat Panel
 - Located in the **N-panel sidebar** of the 3D Viewport (`View3D > Sidebar > BlenderMentor` tab)
 - Streamlined as a distraction-free **Remote Control** that keeps your 3D viewport clean by default
+- Shows a **"Start BlenderMentor"** button when the browser companion is not connected, letting you launch it with one click
 - Shows only the **Active Step Card** with its official Blender icon, instruction title, context/reasoning box, quick re-highlight (`💡`), follow-up (`❓`), and compact tutorial (`URL`) buttons
 - Clean idle state: Prev/Next and empty counters are hidden until steps are active
 - **🎙️ Smart Voice Dictation (`Alt + ↑`)**:
