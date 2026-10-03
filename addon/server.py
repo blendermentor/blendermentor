@@ -4,13 +4,21 @@
 import os
 import json
 import threading
+import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 import bpy
 
 _server = None
 _server_thread = None
+_last_companion_ping = 0.0
 SERVER_PORT = 8765
+
+
+def is_companion_connected(timeout: float = 4.0) -> bool:
+    """Return True if the browser companion has polled the server within timeout seconds."""
+    global _last_companion_ping
+    return (time.time() - _last_companion_ping) <= timeout
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -110,6 +118,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
 
         # 3. Synchronized State Endpoint
         if self.path == "/api/state":
+            global _last_companion_ping
+            _last_companion_ping = time.time()
             try:
                 scene = getattr(bpy.context, "scene", None)
                 act_obj = getattr(bpy.context, "active_object", None)

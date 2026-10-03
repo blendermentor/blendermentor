@@ -78,16 +78,18 @@ On first use, the preferences panel guides the user to configure their AI provid
 
 ### 2. Chat Panel
 - Located in the **N-panel sidebar** of the 3D Viewport (`View3D > Sidebar > BlenderMentor` tab)
-- Redesigned as a compact **Remote Control** that keeps your 3D viewport clean by default
-- Shows only the **Active Step Card** with its official Blender icon, instruction title, context/reasoning box, quick re-highlight (`💡`), and follow-up (`❓`) buttons
-- **Full View Toggle**: Top button toggles between compact Remote Control and full conversation stream & step checklist
-- **🎙️ Hybrid Walkie-Talkie Mic**:
-  - *Hold (>0.4s)*: Walkie-talkie mode — hold down to speak inside Blender, and release to stop dictation and send to the companion
-  - *Tap (<0.4s)*: Toggle mode — tap to turn mic on, tap again to stop and send
-- **Global Step Shortcuts**:
+- Streamlined as a distraction-free **Remote Control** that keeps your 3D viewport clean by default
+- Shows only the **Active Step Card** with its official Blender icon, instruction title, context/reasoning box, quick re-highlight (`💡`), follow-up (`❓`), and compact tutorial (`URL`) buttons
+- Clean idle state: Prev/Next and empty counters are hidden until steps are active
+- **🎙️ Smart Voice Dictation (`Alt + ↑`)**:
+  - Tap or press **`Alt + ↑`** (`Option + ↑` on macOS) to toggle voice dictation
+  - If the browser companion isn't running, pressing the Mic or shortcut **automatically launches the browser companion** and starts listening seamlessly
+  - Tap again or press `Alt + ↑` to stop dictation and submit your question
+- **Global Shortcuts**:
+  - **`Alt + ↑`** (`Option + ↑` on macOS): Toggle voice dictation in browser companion globally
   - **`Alt + →`** (`Option + →` on macOS): Advance to next step from *any* editor in Blender (3D View, Properties, Outliner, Nodes, Timeline)
   - **`Alt + ←`** (`Option + ←` on macOS): Go back to previous step globally
-- **Browser Companion Button** (`Browser`): Launches the dual-column companion app on `http://127.0.0.1:8765` for second monitors and tablets
+- **Browser Companion Button** (`Browser`): Launches the dual-column companion app on `http://127.0.0.1:8765` for full chat history, speech synthesis, and dual-monitor workflow
 - Conversation history stored in `bpy.types.Scene` — persists with the `.blend` file and is shared across all Blender editor windows
 - **Follow-up questions**: each step has an **Ask ❓** button — clicking it puts the input into follow-up mode, and the AI receives the previous response as context to provide an improved, clarified step list
 
