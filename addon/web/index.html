@@ -119,6 +119,82 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       display: flex;
       align-items: center;
       gap: 10px;
+      position: relative;
+    }
+
+    .settings-wrapper {
+      position: relative;
+    }
+
+    .btn-icon {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border-radius: 6px;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      color: var(--text-main);
+      cursor: pointer;
+      transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+    }
+
+    .btn-icon:hover,
+    .btn-icon.active {
+      background-color: #3e3e3e;
+      border-color: var(--border-focus);
+      color: #ffffff;
+    }
+
+    .settings-popover {
+      display: none;
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: 270px;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-focus);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      padding: 14px;
+      z-index: 1000;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .settings-popover.open {
+      display: flex;
+    }
+
+    .settings-popover-title {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--text-main);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+      letter-spacing: 0.3px;
+    }
+
+    .settings-field {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .settings-field label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+    }
+
+    .settings-field select {
+      width: 100%;
+      max-width: 100%;
+      box-sizing: border-box;
     }
 
     button {
@@ -223,7 +299,11 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .col-header {
-      padding: 12px 18px;
+      height: 48px;
+      min-height: 48px;
+      max-height: 48px;
+      box-sizing: border-box;
+      padding: 0 18px;
       background-color: var(--bg-panel);
       border-bottom: 1px solid var(--border);
       display: flex;
@@ -502,23 +582,23 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
     .step-hero {
       background-color: var(--bg-card-active);
-      border: 2px solid var(--amber);
+      border: 1px solid var(--border-focus);
       border-radius: var(--radius);
       padding: 16px;
-      margin-bottom: 6px;
+      margin-bottom: 8px;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.22);
     }
 
     .step-hero-header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      font-size: 12px;
+      font-size: 11.5px;
       font-weight: 700;
-      color: var(--amber);
+      color: var(--text-dim);
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
@@ -614,12 +694,41 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       font-family: monospace;
     }
 
+    /* Grouped Subsequent Steps Container */
+    .subsequent-steps-box {
+      background-color: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .subsequent-steps-header {
+      font-size: 11.5px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-dim);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 2px;
+    }
+
+    .subsequent-steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
     /* Step Card List */
     .step-card {
       background-color: var(--bg-card);
       border: 1px solid var(--border);
       border-radius: var(--radius);
-      padding: 12px 14px;
+      padding: 10px 12px;
       cursor: pointer;
       display: flex;
       flex-direction: column;
@@ -633,8 +742,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .step-card.active {
-      border-color: var(--amber);
-      background-color: rgba(230, 149, 0, 0.08);
+      border-color: var(--border-focus);
+      background-color: rgba(255, 255, 255, 0.06);
     }
 
     .step-card-top {
@@ -647,7 +756,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .step-card.active .step-card-top {
-      color: var(--amber);
+      color: var(--text-main);
     }
 
     .step-actions {
@@ -699,6 +808,71 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       color: #e3f2fd;
     }
 
+    .action-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      vertical-align: middle;
+    }
+
+    .action-icon svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+    }
+
+    .action-icon svg,
+    .action-icon svg g,
+    .action-icon svg path {
+      fill: currentColor !important;
+    }
+
+    .step-check-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      margin-right: 4px;
+      vertical-align: middle;
+    }
+
+    .step-check-icon svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+    }
+
+    .step-check-icon svg,
+    .step-check-icon svg g,
+    .step-check-icon svg path {
+      fill: #4caf50 !important;
+    }
+
+    .btn-icon-svg {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 16px;
+      height: 16px;
+      vertical-align: middle;
+    }
+
+    .btn-icon-svg svg {
+      width: 16px;
+      height: 16px;
+      display: block;
+    }
+
+    .btn-icon-svg svg,
+    .btn-icon-svg svg g,
+    .btn-icon-svg svg path {
+      fill: currentColor !important;
+    }
+
     .step-card-instruction {
       font-size: 14px;
       font-weight: 500;
@@ -734,8 +908,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .step-card.active .blender-icon-svg {
-      border-color: var(--amber);
-      background-color: rgba(230, 149, 0, 0.18);
+      border-color: var(--border-focus);
+      background-color: rgba(255, 255, 255, 0.12);
     }
 
     .blender-icon-badge svg {
@@ -769,8 +943,19 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .empty-icon {
-      font-size: 48px;
-      opacity: 0.4;
+      width: 48px;
+      height: 48px;
+      opacity: 0.35;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .empty-icon svg {
+      width: 48px;
+      height: 48px;
+      display: block;
+      fill: currentColor !important;
     }
 
     .tts-mode-select,
@@ -831,23 +1016,44 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       </div>
 
       <div class="header-actions">
-        <select id="ttsModeSelect" class="tts-mode-select" title="Voice Readout Mode">
-          <option value="full">🔊 Readout: Title & Description</option>
-          <option value="title">🔉 Readout: Title Only</option>
-          <option value="off">🔇 Readout: Off</option>
-        </select>
-        <select id="ttsRateSelect" class="tts-rate-select" title="Voice Readout Speed">
-          <option value="0.8">⚡ 0.8x</option>
-          <option value="1.0">⚡ 1.0x</option>
-          <option value="1.15">⚡ 1.15x</option>
-          <option value="1.25">⚡ 1.25x</option>
-          <option value="1.5">⚡ 1.5x</option>
-          <option value="1.75">⚡ 1.75x</option>
-          <option value="2.0">⚡ 2.0x</option>
-        </select>
-        <select id="voiceSelect" class="voice-select" title="Choose high-quality speech voice"></select>
+        <div class="settings-wrapper">
+          <button id="btnSettings" class="btn-icon" title="Audio & Voice Settings">
+            <span class="btn-icon-svg" id="settingsIconSlot"></span>
+          </button>
+          <div id="settingsPopover" class="settings-popover">
+            <div class="settings-popover-title">Audio & Readout Settings</div>
+            
+            <div class="settings-field">
+              <label for="ttsModeSelect">Readout Mode</label>
+              <select id="ttsModeSelect" class="tts-mode-select" title="Voice Readout Mode">
+                <option value="full">Title & Description</option>
+                <option value="title">Title Only</option>
+                <option value="off">Off</option>
+              </select>
+            </div>
+
+            <div class="settings-field">
+              <label for="ttsRateSelect">Playback Speed</label>
+              <select id="ttsRateSelect" class="tts-rate-select" title="Voice Readout Speed">
+                <option value="0.8">0.8x</option>
+                <option value="1.0">1.0x</option>
+                <option value="1.15">1.15x (Default)</option>
+                <option value="1.25">1.25x</option>
+                <option value="1.5">1.5x</option>
+                <option value="1.75">1.75x</option>
+                <option value="2.0">2.0x</option>
+              </select>
+            </div>
+
+            <div class="settings-field">
+              <label for="voiceSelect">Speech Voice</label>
+              <select id="voiceSelect" class="voice-select" title="Choose high-quality speech voice"></select>
+            </div>
+          </div>
+        </div>
+
         <button id="btnClear" title="Clear conversation and steps">
-          <span>🗑️</span> Clear
+          <span class="btn-icon-svg" id="clearIconSlot"></span> Clear
         </button>
       </div>
     </header>
@@ -858,7 +1064,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       <!-- Column 1: Chat & Voice Interaction -->
       <div class="col col-chat" id="colChat">
         <div class="col-header">
-          <span>💬 Conversation & Guidance</span>
+          <span>Conversation & Guidance</span>
           <span id="chatCount" class="step-tag">0 messages</span>
         </div>
 
@@ -875,7 +1081,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         </div>
 
         <div id="followupBanner" class="followup-banner">
-          <span id="followupText">❓ Asking about Step 1</span>
+          <span id="followupText">Asking about Step 1</span>
           <button id="btnCancelFollowup" class="btn-cancel-followup" title="Cancel follow-up (return to regular chat)" onclick="cancelFollowup()">✕ Cancel</button>
         </div>
 
@@ -894,7 +1100,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
         <div class="chat-input-bar">
           <button id="btnMic" class="btn-mic" title="Click to speak (Voice Input)">
-            <span>🎙️</span>
+            <span class="btn-icon-svg" id="micIconSlot"></span>
           </button>
           <div class="input-wrapper">
             <textarea id="chatInput" rows="1" placeholder="Ask a question or request guidance..." autocomplete="off"></textarea>
@@ -911,19 +1117,19 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       <!-- Column 2: Guided Steps & Visual Navigator -->
       <div class="col col-steps" id="colSteps">
         <div class="col-header">
-          <span id="questTitle">🎯 Guided Steps</span>
+          <span id="questTitle">Guided Steps</span>
           <div class="col-header-tools">
             <button id="btnPrev" title="Previous Step">◀ Prev</button>
             <button id="btnNext" title="Next Step">Next ▶</button>
             <button id="btnYoutube" style="display: none;" title="Search YouTube for this tutorial">
-              <span>▶</span> YouTube
+              YouTube
             </button>
           </div>
         </div>
 
         <div id="stepsContainer" class="steps-container">
           <div class="empty-state">
-            <div class="empty-icon">🧭</div>
+            <div class="empty-icon" id="emptyIconSlot"></div>
             <div style="font-size: 16px; font-weight: 600;">No active quest steps yet</div>
             <div style="font-size: 13px; max-width: 320px;">
               Ask a question in the chat column on the left (or speak via microphone) to generate step-by-step guidance!
@@ -967,9 +1173,29 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     const btnPrev = document.getElementById("btnPrev");
     const btnNext = document.getElementById("btnNext");
     const btnYoutube = document.getElementById("btnYoutube");
+    const btnSettings = document.getElementById("btnSettings");
+    const settingsPopover = document.getElementById("settingsPopover");
     const ttsModeSelect = document.getElementById("ttsModeSelect");
     const ttsRateSelect = document.getElementById("ttsRateSelect");
     const stepsContainer = document.getElementById("stepsContainer");
+
+    // Settings popover toggle
+    if (btnSettings && settingsPopover) {
+      btnSettings.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = settingsPopover.classList.toggle("open");
+        btnSettings.classList.toggle("active", isOpen);
+      });
+
+      settingsPopover.addEventListener("click", (e) => {
+        e.stopPropagation();
+      });
+
+      document.addEventListener("click", () => {
+        settingsPopover.classList.remove("open");
+        btnSettings.classList.remove("active");
+      });
+    }
 
     // Dynamic auto-expanding height for chatInput textarea (up to 160px max)
     function autoResizeInput() {
@@ -1364,22 +1590,45 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       return "";
     }
 
+    function getIconRawSVG(iconId) {
+      if (!iconId) return "";
+      const raw = String(iconId).trim().toLowerCase();
+      if (window.BLENDER_OFFICIAL_ICONS && window.BLENDER_OFFICIAL_ICONS[raw]) {
+        return window.BLENDER_OFFICIAL_ICONS[raw];
+      }
+      return "";
+    }
+
+    function initStaticIcons() {
+      const settingsSlot = document.getElementById("settingsIconSlot");
+      if (settingsSlot) settingsSlot.innerHTML = getIconRawSVG("settings") || getIconRawSVG("preferences");
+
+      const clearSlot = document.getElementById("clearIconSlot");
+      if (clearSlot) clearSlot.innerHTML = getIconRawSVG("trash");
+
+      const micSlot = document.getElementById("micIconSlot");
+      if (micSlot) micSlot.innerHTML = getIconRawSVG("sound");
+
+      const emptySlot = document.getElementById("emptyIconSlot");
+      if (emptySlot) emptySlot.innerHTML = getIconRawSVG("info_large") || getIconRawSVG("help") || "";
+    }
+
     function renderSteps(steps, currentIdx) {
       if (!steps || steps.length === 0) {
         stepsContainer.innerHTML = `
           <div class="empty-state">
-            <div class="empty-icon">🧭</div>
+            <div class="empty-icon" id="emptyIconSlot">${getIconRawSVG("info_large") || getIconRawSVG("help")}</div>
             <div style="font-size: 16px; font-weight: 600;">No active quest steps yet</div>
             <div style="font-size: 13px; max-width: 320px;">
               Ask a question in the chat column on the left (or speak via microphone) to generate step-by-step guidance!
             </div>
           </div>
         `;
-        questTitle.textContent = "🎯 Guided Steps";
+        questTitle.textContent = "Guided Steps";
         return;
       }
 
-      questTitle.textContent = `🎯 Step ${currentIdx + 1} of ${steps.length}`;
+      questTitle.textContent = `Step ${currentIdx + 1} of ${steps.length}`;
       stepsContainer.innerHTML = "";
 
       // Hero Card for current active step
@@ -1391,20 +1640,19 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         
         hero.innerHTML = `
           <div class="step-hero-header">
-            <span>${isLastHeroStep ? "🏁 Final Action • Step " + (currentIdx + 1) : "Current Action • Step " + (currentIdx + 1)}</span>
+            <span>${isLastHeroStep ? "Final Action • Step " + (currentIdx + 1) : "Current Action • Step " + (currentIdx + 1)}</span>
             <div class="step-actions">
-              ${current.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${currentIdx}, event)">💡 Highlight</button>` : ""}
-              <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${currentIdx}, event)">❓ Ask</button>
+              ${current.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${currentIdx}, event)"><span class="action-icon">${getIconRawSVG("light")}</span> Highlight</button>` : ""}
+              <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${currentIdx}, event)"><span class="action-icon">${getIconRawSVG("question")}</span> Ask</button>
             </div>
           </div>
           <div class="step-hero-instruction">
             ${getBlenderIconSVG(current.icon)}
             <span style="flex: 1;">${current.instruction}</span>
           </div>
-          ${current.description ? `<div class="step-hero-desc"><strong>💡 Context & Reasoning</strong>${current.description}</div>` : ""}
+          ${current.description ? `<div class="step-hero-desc"><strong><span class="action-icon" style="margin-right: 4px;">${getIconRawSVG("light")}</span> Context & Reasoning</strong>${current.description}</div>` : ""}
           ${isLastHeroStep ? `
             <div class="step-hero-completion">
-              <span style="font-size: 20px;">🏁</span>
               <div>
                 <strong>This is the last step.</strong>
                 <span>Hope you've achieved what you wanted! Feel free to ask anytime if you need adjustments or another task.</span>
@@ -1415,37 +1663,52 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         stepsContainer.appendChild(hero);
       }
 
-      // Step cards list
-      steps.forEach((step, idx) => {
-        const card = document.createElement("div");
-        card.className = `step-card ${idx === currentIdx ? "active" : ""}`;
-        card.onclick = () => selectStep(idx);
+      // Group subsequent steps in dedicated container box
+      if (steps.length > 1) {
+        const subBox = document.createElement("div");
+        subBox.className = "subsequent-steps-box";
 
-        const isLastCard = (idx === steps.length - 1);
-        const statusIcon = step.is_done ? "✅" : (idx === currentIdx ? "📍" : "⚪");
+        const subHeader = document.createElement("div");
+        subHeader.className = "subsequent-steps-header";
+        subHeader.textContent = "Step Sequence";
+        subBox.appendChild(subHeader);
 
-        card.innerHTML = `
-          <div class="step-card-top">
-            <span>${statusIcon} Step ${idx + 1}${isLastCard ? " (Final)" : ""}</span>
-            <div class="step-actions">
-              ${step.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${idx}, event)">💡</button>` : ""}
-              <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${idx}, event)">❓</button>
+        const subList = document.createElement("div");
+        subList.className = "subsequent-steps-list";
+
+        steps.forEach((step, idx) => {
+          const card = document.createElement("div");
+          card.className = `step-card ${idx === currentIdx ? "active" : ""}`;
+          card.onclick = () => selectStep(idx);
+
+          const isLastCard = (idx === steps.length - 1);
+          const checkIcon = step.is_done ? `<span class="step-check-icon">${getIconRawSVG("checkmark")}</span>` : "";
+
+          card.innerHTML = `
+            <div class="step-card-top">
+              <span>${checkIcon}Step ${idx + 1}${isLastCard ? " (Final)" : ""}</span>
+              <div class="step-actions">
+                ${step.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${idx}, event)"><span class="action-icon">${getIconRawSVG("light")}</span></button>` : ""}
+                <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${idx}, event)"><span class="action-icon">${getIconRawSVG("question")}</span></button>
+              </div>
             </div>
-          </div>
-          <div class="step-card-instruction">
-            ${getBlenderIconSVG(step.icon)}
-            <span style="flex: 1;">${step.instruction}</span>
-          </div>
-          ${step.description ? `<div class="step-card-reasoning">${step.description}</div>` : ""}
-          ${isLastCard ? `
-            <div class="step-card-completion">
-              <span>🏁</span>
-              <span>This is the last step. Hope you've achieved what you wanted!</span>
+            <div class="step-card-instruction">
+              ${getBlenderIconSVG(step.icon)}
+              <span style="flex: 1;">${step.instruction}</span>
             </div>
-          ` : ""}
-        `;
-        stepsContainer.appendChild(card);
-      });
+            ${step.description ? `<div class="step-card-reasoning">${step.description}</div>` : ""}
+            ${isLastCard ? `
+              <div class="step-card-completion">
+                <span>This is the last step. Hope you've achieved what you wanted!</span>
+              </div>
+            ` : ""}
+          `;
+          subList.appendChild(card);
+        });
+
+        subBox.appendChild(subList);
+        stepsContainer.appendChild(subBox);
+      }
     }
 
     let activeFollowupStep = -1;
@@ -1496,7 +1759,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       if (activeFollowupStep >= 0 && appState.steps && appState.steps[activeFollowupStep]) {
         const step = appState.steps[activeFollowupStep];
         const preview = step.instruction.length > 42 ? step.instruction.substring(0, 40) + "..." : step.instruction;
-        textSpan.innerHTML = `❓ Asking about <strong>Step ${activeFollowupStep + 1}</strong>: <em>${preview}</em>`;
+        textSpan.innerHTML = `<span class="action-icon" style="margin-right: 6px;">${getIconRawSVG("question")}</span> Asking about <strong>Step ${activeFollowupStep + 1}</strong>: <em>${preview}</em>`;
         banner.style.display = "flex";
       } else {
         banner.style.display = "none";
@@ -1719,7 +1982,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             if (activeDeviceLabel && activeDeviceLabel.toLowerCase().includes("blackhole")) {
               micStatusText.textContent = "⚠️ Chrome using BlackHole 2ch (silent). Switch to iMac Mic!";
             } else if (!hasDetectedSound) {
-              micStatusText.textContent = `🎙️ Listening (${pct}% vol)... Speak now`;
+              micStatusText.textContent = `Listening (${pct}% vol)... Speak now`;
             }
           }
 
@@ -1836,7 +2099,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
       if (!isUserDictating) return; // User stopped while prompt was open
 
-      micStatusText.textContent = "🎙️ Listening... speak your question now";
+      micStatusText.textContent = "Listening... speak your question now";
 
       // Periodically check if sound is detected. If flat silence for 4s, provide gentle guidance
       silenceCheckTimer = setTimeout(() => {
@@ -1855,7 +2118,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
         recognitionInstance.onstart = () => {
           if (isUserDictating) {
-            micStatusText.textContent = "🎙️ Listening... speak your question now";
+            micStatusText.textContent = "Listening... speak your question now";
           }
         };
 
@@ -1875,7 +2138,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
           chatInput.value = fullText;
           autoResizeInput();
           if (fullText) {
-            micStatusText.textContent = `🗣️ Hearing: "${(interimDictation || fullText)}"`;
+            micStatusText.textContent = `Hearing: "${(interimDictation || fullText)}"`;
             // Live sync to Blender N-panel text field
             fetch("/api/transcribe_interim", {
               method: "POST",
@@ -2107,6 +2370,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
     // Auto-polling interval (fast 200ms for responsive remote control sync)
     setInterval(fetchState, 200);
+    initStaticIcons();
     fetchState();
 
     // Notify Blender immediately when companion window/tab is closed
