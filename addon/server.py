@@ -15,7 +15,7 @@ _last_companion_ping = 0.0
 SERVER_PORT = 8765
 
 
-def is_companion_connected(timeout: float = 4.0) -> bool:
+def is_companion_connected(timeout: float = 3.0) -> bool:
     """Return True if the browser companion has polled the server within timeout seconds."""
     global _last_companion_ping
     return (time.time() - _last_companion_ping) <= timeout
@@ -373,6 +373,26 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             self._set_cors_headers()
             self.end_headers()
             self.wfile.write(b'{"status":"ok"}')
+            return
+
+        # 8. Companion window close / disconnect endpoint
+        if self.path == "/api/disconnect":
+            global _last_companion_ping
+            _last_companion_ping = 0.0
+            def _tag_disconnect():
+                try:
+                    for win in bpy.context.window_manager.windows:
+                        for area in win.screen.areas:
+                            if area.type == 'VIEW_3D':
+                                area.tag_redraw()
+                except Exception:
+                    pass
+                return None
+            bpy.app.timers.register(_tag_disconnect, first_interval=0.0)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(b'{"status":"disconnected"}')
             return
 
         self.send_response(404)

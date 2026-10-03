@@ -94,18 +94,28 @@ def register_properties():
 
 
 def unregister_properties():
-    del bpy.types.Scene.bm_remote_mic_abort
-    del bpy.types.Scene.bm_remote_mic_send
-    del bpy.types.Scene.bm_remote_mic_active
-    del bpy.types.Scene.bm_youtube_query
-    del bpy.types.Scene.bm_is_processing
-    del bpy.types.Scene.bm_status_message
-    del bpy.types.Scene.bm_last_ai_response
-    del bpy.types.Scene.bm_followup_step
-    del bpy.types.Scene.bm_input_text
-    del bpy.types.Scene.bm_current_step
-    del bpy.types.Scene.bm_steps
-    del bpy.types.Scene.bm_chat_history
+    props = [
+        "bm_remote_mic_abort",
+        "bm_remote_mic_send",
+        "bm_remote_mic_active",
+        "bm_youtube_query",
+        "bm_is_processing",
+        "bm_status_message",
+        "bm_last_ai_response",
+        "bm_followup_step",
+        "bm_input_text",
+        "bm_current_step",
+        "bm_steps",
+        "bm_chat_history",
+    ]
+    for prop in props:
+        try:
+            delattr(bpy.types.Scene, prop)
+        except Exception:
+            pass
 
     for cls in reversed(_classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass

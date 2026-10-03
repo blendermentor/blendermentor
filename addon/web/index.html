@@ -2075,6 +2075,19 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     // Auto-polling interval (fast 200ms for responsive remote control sync)
     setInterval(fetchState, 200);
     fetchState();
+
+    // Notify Blender immediately when companion window/tab is closed
+    const notifyDisconnect = () => {
+      try {
+        if (navigator.sendBeacon) {
+          navigator.sendBeacon('/api/disconnect', JSON.stringify({ action: 'disconnect' }));
+        } else {
+          fetch('/api/disconnect', { method: 'POST', keepalive: true });
+        }
+      } catch (e) {}
+    };
+    window.addEventListener('pagehide', notifyDisconnect);
+    window.addEventListener('beforeunload', notifyDisconnect);
   </script>
 </body>
 </html>

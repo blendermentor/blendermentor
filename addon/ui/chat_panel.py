@@ -459,6 +459,18 @@ class BLENDERMENTOR_OT_open_web_companion(bpy.types.Operator):
         url = f"http://127.0.0.1:{port}"
         webbrowser.open(url)
         self.report({'INFO'}, f"Opened BlenderMentor Companion at {url}")
+
+        def _refresh_poll():
+            from ..server import is_companion_connected
+            if is_companion_connected(timeout=3.0):
+                for win in bpy.context.window_manager.windows:
+                    for area in win.screen.areas:
+                        if area.type == 'VIEW_3D':
+                            area.tag_redraw()
+                return None
+            return 0.5
+
+        bpy.app.timers.register(_refresh_poll, first_interval=0.5)
         return {'FINISHED'}
 
 
@@ -920,7 +932,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         # 1. Connection Banner / Start BlenderMentor Button
         # -------------------------------------------------------------
         from ..server import is_companion_connected
-        connected = is_companion_connected(timeout=4.0)
+        connected = is_companion_connected(timeout=3.0)
 
         if not connected:
             start_box = layout.box()
@@ -930,7 +942,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             start_col.operator(
                 "blendermentor.open_web_companion",
                 text="Start BlenderMentor",
-                icon='WINDOW'
+                icon='NONE'
             )
             layout.separator(factor=0.5)
             return
@@ -940,17 +952,17 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         # (Displayed only when connected to browser companion)
         # -------------------------------------------------------------
         bar = layout.row(align=False)
-        bar.scale_y = 1.4
+        bar.scale_y = 1.35
 
         # 1. Mic Button (Standalone Square 1:1, to the left of the text field)
-        mic_sub = bar.row(align=True)
-        mic_sub.scale_x = 1.55
+        mic_col = bar.column(align=True)
+        mic_col.ui_units_x = 1.35
         mic_icon_id = get_mic_icon_id(active=scene.bm_remote_mic_active)
         if mic_icon_id:
-            mic_sub.operator("blendermentor.hybrid_mic", text="", icon_value=mic_icon_id)
+            mic_col.operator("blendermentor.hybrid_mic", text="", icon_value=mic_icon_id)
         else:
             mic_icon = 'REC' if scene.bm_remote_mic_active else 'SOUND'
-            mic_sub.operator("blendermentor.hybrid_mic", text="", icon=mic_icon)
+            mic_col.operator("blendermentor.hybrid_mic", text="", icon=mic_icon)
 
         # 2. Text input field & Send button (connected together)
         input_sub = bar.row(align=True)
@@ -1239,6 +1251,26 @@ def unregister_keymaps():
     _addon_keymaps.clear()
 
 
+_last_companion_connected = False
+
+
+def _poll_companion_status():
+    """Poll browser companion connection status and redraw 3D Viewport when state changes."""
+    global _last_companion_connected
+    from ..server import is_companion_connected
+    current = is_companion_connected(timeout=3.0)
+    if current != _last_companion_connected:
+        _last_companion_connected = current
+        try:
+            for win in bpy.context.window_manager.windows:
+                for area in win.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+        except Exception:
+            pass
+    return 1.0
+
+
 def register():
     # Load custom icon preview collection
     try:
@@ -1266,6 +1298,13 @@ def register():
     except Exception as e:
         print(f"[BlenderMentor] Warning: Could not register keymaps: {e}")
 
+    # Polling monitor for browser companion connection state changes
+    try:
+        if not bpy.app.timers.is_registered(_poll_companion_status):
+            bpy.app.timers.register(_poll_companion_status, first_interval=1.0, persistent=True)
+    except Exception as e:
+        print(f"[BlenderMentor] Warning: Could not register companion monitor timer: {e}")
+
     # Dev tools properties
     bpy.types.Scene.bm_dev_highlight_target = bpy.props.StringProperty(
         name="Target", default="viewport"
@@ -1276,6 +1315,12 @@ def register():
 
 
 def unregister():
+    try:
+        if bpy.app.timers.is_registered(_poll_companion_status):
+            bpy.app.timers.unregister(_poll_companion_status)
+    except Exception:
+        pass
+
     unregister_keymaps()
 
     try:
@@ -1288,7 +1333,10 @@ def unregister():
         pass
 
     for cls in reversed(_classes):
-        bpy.utils.unregister_class(cls)
+        try:
+            bpy.utils.unregister_class(cls)
+        except Exception:
+            pass
 
     for pcoll in _preview_collections.values():
         try:
