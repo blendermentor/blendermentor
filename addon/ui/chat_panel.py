@@ -483,6 +483,34 @@ class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
         # 3. Turn on dictation in browser
         scene.bm_remote_mic_active = True
         scene.bm_remote_mic_send = False
+        scene.bm_remote_mic_abort = False
+        for window in context.window_manager.windows:
+            for area in window.screen.areas:
+                area.tag_redraw()
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_mic_abort(bpy.types.Operator):
+    """Cancel / Edit Dictation: Stop listening and keep text in input box, or clear it (Alt + Down Arrow)."""
+    bl_idname = "blendermentor.mic_abort"
+    bl_label = "Cancel Dictation / Clear Input"
+    bl_description = "Stop listening and dump speech into box; press again to clear (Alt + Down Arrow)"
+
+    def execute(self, context):
+        scene = context.scene
+
+        if scene.bm_remote_mic_active:
+            # Active dictation -> stop listening without sending (speech stays in input box for editing!)
+            scene.bm_remote_mic_active = False
+            scene.bm_remote_mic_send = False
+            scene.bm_remote_mic_abort = True
+            self.report({'INFO'}, "Dictation stopped. Speech kept in text box for editing.")
+        else:
+            # Already stopped -> clear input text box
+            scene.bm_remote_mic_abort = True
+            scene.bm_input_text = ""
+            self.report({'INFO'}, "Cleared input text.")
+
         for window in context.window_manager.windows:
             for area in window.screen.areas:
                 area.tag_redraw()
@@ -840,9 +868,9 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         mic_col.scale_y = 1.45
         if scene.bm_remote_mic_active:
             mic_col.alert = True
-            mic_col.operator("blendermentor.hybrid_mic", text="Listening... (Alt + ↑ to Stop)", icon='REC')
+            mic_col.operator("blendermentor.hybrid_mic", text="Listening... (Alt + ↑ Send, Alt + ↓ Cancel)", icon='REC')
         else:
-            mic_col.operator("blendermentor.hybrid_mic", text="Voice Dictation (Alt + ↑)", icon='MIC')
+            mic_col.operator("blendermentor.hybrid_mic", text="Voice Dictation (Alt + ↑)", icon='SOUND')
 
         # -------------------------------------------------------------
         # 2. Step Navigator & Remote Controls (Only when steps exist)
@@ -1046,6 +1074,7 @@ _classes = (
     BLENDERMENTOR_OT_clear_chat,
     BLENDERMENTOR_OT_open_web_companion,
     BLENDERMENTOR_OT_hybrid_mic,
+    BLENDERMENTOR_OT_mic_abort,
     BLENDERMENTOR_OT_step_next,
     BLENDERMENTOR_OT_step_prev,
     BLENDERMENTOR_OT_step_goto,
@@ -1104,6 +1133,15 @@ def register_keymaps():
         alt=True
     )
     _addon_keymaps.append((km, kmi_mic))
+
+    # Cancel Dictation / Clear Input: Alt + Down Arrow
+    kmi_abort = km.keymap_items.new(
+        "blendermentor.mic_abort",
+        type='DOWN_ARROW',
+        value='PRESS',
+        alt=True
+    )
+    _addon_keymaps.append((km, kmi_abort))
 
 
 def unregister_keymaps():

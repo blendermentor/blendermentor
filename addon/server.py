@@ -159,6 +159,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 followup_step = getattr(scene, "bm_followup_step", -1) if scene else -1
                 remote_mic_active = getattr(scene, "bm_remote_mic_active", False) if scene else False
                 remote_mic_send = getattr(scene, "bm_remote_mic_send", False) if scene else False
+                remote_mic_abort = getattr(scene, "bm_remote_mic_abort", False) if scene else False
 
                 data = {
                     "active_object": act_obj.name if act_obj else None,
@@ -173,6 +174,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     "youtube_query": youtube_query,
                     "remote_mic_active": remote_mic_active,
                     "remote_mic_send": remote_mic_send,
+                    "remote_mic_abort": remote_mic_abort,
                 }
                 payload = json.dumps(data).encode("utf-8")
                 self.send_response(200)
@@ -319,6 +321,40 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             self._set_cors_headers()
             self.end_headers()
             self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+            return
+
+        # 5. Acknowledge / reset remote mic abort flag
+        if self.path == "/api/remote_mic_abort_ack":
+            def _reset_remote_abort():
+                scene = getattr(bpy.context, "scene", None)
+                if scene:
+                    scene.bm_remote_mic_abort = False
+                    scene.bm_remote_mic_active = False
+                return None
+            bpy.app.timers.register(_reset_remote_abort, first_interval=0.001)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+            return
+
+        # 6. Bi-directional stop: browser tells Blender that mic listening stopped
+        if self.path == "/api/remote_mic_stop":
+            def _sync_remote_stop():
+                scene = getattr(bpy.context, "scene", None)
+                if scene:
+                    scene.bm_remote_mic_active = False
+                    scene.bm_remote_mic_send = False
+                    scene.bm_remote_mic_abort = False
+                    for window in bpy.context.window_manager.windows:
+                        for area in window.screen.areas:
+                            area.tag_redraw()
+                return None
+            bpy.app.timers.register(_sync_remote_stop, first_interval=0.001)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "stopped"}).encode("utf-8"))
             return
 
         self.send_response(404)

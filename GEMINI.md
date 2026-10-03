@@ -86,7 +86,8 @@ On first use, the preferences panel guides the user to configure their AI provid
   - If the browser companion isn't running, pressing the Mic or shortcut **automatically launches the browser companion** and starts listening seamlessly
   - Tap again or press `Alt + ↑` to stop dictation and submit your question
 - **Global Shortcuts**:
-  - **`Alt + ↑`** (`Option + ↑` on macOS): Toggle voice dictation in browser companion globally
+  - **`Alt + ↑`** (`Option + ↑` on macOS): Toggle voice dictation (tap to listen, tap again to finalize and send)
+  - **`Alt + ↓`** (`Option + ↓` on macOS): Cancel voice dictation without sending (transcribed text remains in the text box for editing; pressing again clears the box)
   - **`Alt + →`** (`Option + →` on macOS): Advance to next step from *any* editor in Blender (3D View, Properties, Outliner, Nodes, Timeline)
   - **`Alt + ←`** (`Option + ←` on macOS): Go back to previous step globally
 - **Browser Companion Button** (`Browser`): Launches the dual-column companion app on `http://127.0.0.1:8765` for full chat history, speech synthesis, and dual-monitor workflow

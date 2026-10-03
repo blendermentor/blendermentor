@@ -87,9 +87,14 @@ def register_properties():
         name="Remote Mic Send", default=False,
         description="Flag signaling browser to finalize and send dictation"
     )
+    bpy.types.Scene.bm_remote_mic_abort = bpy.props.BoolProperty(
+        name="Remote Mic Abort", default=False,
+        description="Flag signaling browser to cancel/abort dictation without sending (Alt + Down Arrow)"
+    )
 
 
 def unregister_properties():
+    del bpy.types.Scene.bm_remote_mic_abort
     del bpy.types.Scene.bm_remote_mic_send
     del bpy.types.Scene.bm_remote_mic_active
     del bpy.types.Scene.bm_youtube_query

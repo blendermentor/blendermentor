@@ -1069,14 +1069,25 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     function updateUI(data) {
-      // Remote Mic / Walkie-Talkie synchronization from Blender N-Panel
+      // Handle Abort command from Blender (Alt + Down Arrow)
+      if (data.remote_mic_abort) {
+        fetch("/api/remote_mic_abort_ack", { method: "POST" }).catch(() => {});
+        if (isUserDictating || isRemoteDictating) {
+          isRemoteDictating = false;
+          if (typeof stopDictation === "function") {
+            stopDictation(false);
+          }
+        }
+      }
+
+      // Remote Mic synchronization from Blender N-Panel (Alt + Up Arrow)
       if (data.remote_mic_active && !isUserDictating) {
         isRemoteDictating = true;
         if (typeof startDictation === "function") {
           startDictation();
         }
       } else if (!data.remote_mic_active && isRemoteDictating && !data.remote_mic_send) {
-        // Only stop if dictation was initiated remotely from Blender N-panel!
+        // Blender turned off remote mic without sending
         isRemoteDictating = false;
         if (typeof stopDictation === "function") {
           stopDictation(false);
@@ -1644,6 +1655,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     function stopDictation(focusInput = true) {
       isUserDictating = false;
       isRemoteDictating = false;
+      // Tell Blender immediately that mic listening has ended
+      fetch("/api/remote_mic_stop", { method: "POST" }).catch(() => {});
       if (silenceCheckTimer) {
         clearTimeout(silenceCheckTimer);
         silenceCheckTimer = null;
