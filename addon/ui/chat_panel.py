@@ -943,22 +943,28 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             layout.separator(factor=0.5)
 
         # -------------------------------------------------------------
-        # 2. Voice Dictation Button & Text Input Field
+        # 2. Unified Input Bar: [Mic Button] [Text Field] [Send Button]
         # -------------------------------------------------------------
-        mic_row = layout.row(align=True)
-        mic_row.scale_y = 1.6
+        input_row = layout.row(align=True)
+        input_row.scale_y = 1.45
+
+        # 1. Mic Button (Square 1:1, to the left of the text field)
+        mic_sub = input_row.row(align=True)
+        mic_sub.ui_units_x = 1.45
         mic_icon_id = get_mic_icon_id(active=scene.bm_remote_mic_active)
         if mic_icon_id:
-            mic_row.operator("blendermentor.hybrid_mic", text="", icon_value=mic_icon_id)
+            mic_sub.operator("blendermentor.hybrid_mic", text="", icon_value=mic_icon_id)
         else:
             mic_icon = 'REC' if scene.bm_remote_mic_active else 'SOUND'
-            mic_row.operator("blendermentor.hybrid_mic", text="", icon=mic_icon)
+            mic_sub.operator("blendermentor.hybrid_mic", text="", icon=mic_icon)
 
-        # Text input field just below the voice dictate icon with send button
-        input_row = layout.row(align=True)
-        input_row.scale_y = 1.25
+        # 2. Text input field (occupies all remaining space in the middle)
         input_row.prop(scene, "bm_input_text", text="")
-        send_btn = input_row.operator("blendermentor.send_message", text="", icon='PLAY')
+
+        # 3. Send button (Square 1:1, to the right of the text field)
+        send_sub = input_row.row(align=True)
+        send_sub.ui_units_x = 1.45
+        send_btn = send_sub.operator("blendermentor.send_message", text="", icon='PLAY')
         if scene.bm_is_processing:
             send_btn.enabled = False
 
