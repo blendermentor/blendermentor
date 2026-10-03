@@ -29,13 +29,32 @@ class StepItem(bpy.types.PropertyGroup):
 _classes = (ChatMessage, StepItem)
 
 
+_suppress_message_update = False
+
+
 def on_message_update(self, context):
-    if self.bm_input_text.strip():
-        # Schedule the operator execution to avoid context lock during property update
-        def run_op():
-            bpy.ops.blendermentor.send_message('EXEC_DEFAULT')
+    global _suppress_message_update
+    if _suppress_message_update:
+        return
+    # Never auto-send while remote voice dictation is active
+    if getattr(self, "bm_remote_mic_active", False):
+        return
+    if not self.bm_input_text.strip():
+        return
+
+    # Schedule the operator execution to avoid context lock during property update
+    def run_op():
+        scene = getattr(bpy.context, "scene", None)
+        if not scene:
             return None
-        bpy.app.timers.register(run_op, first_interval=0.01)
+        if getattr(scene, "bm_remote_mic_active", False):
+            return None
+        if not scene.bm_input_text.strip():
+            return None
+        bpy.ops.blendermentor.send_message('EXEC_DEFAULT')
+        return None
+
+    bpy.app.timers.register(run_op, first_interval=0.01)
 
 def register_properties():
     for cls in _classes:

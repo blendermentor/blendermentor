@@ -904,21 +904,23 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
 
     def draw_header(self, context):
         layout = self.layout
-        row = layout.row(align=True)
-
         logo_id = get_logo_icon_id()
         if logo_id:
-            row.label(text="BlenderMentor", icon_value=logo_id)
+            layout.label(text="BlenderMentor", icon_value=logo_id)
         else:
-            row.label(text="BlenderMentor", icon='WINDOW')
+            layout.label(text="BlenderMentor", icon='WINDOW')
 
-        # Information button
-        row.operator("blendermentor.info", text="", icon='INFO')
+    def draw_header_preset(self, context):
+        layout = self.layout
+        row = layout.row(align=True)
 
         # DEV badge
         addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
         if addon_prefs and addon_prefs.preferences.developer_mode:
             row.label(text="DEV", icon='TOOL_SETTINGS')
+
+        # Information button positioned at the extreme right
+        row.operator("blendermentor.info", text="", icon='INFO')
 
     def draw(self, context):
         layout = self.layout

@@ -223,7 +223,12 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                             scene.bm_followup_step = int(followup_arg)
                         except Exception:
                             pass
-                    scene.bm_input_text = msg_text
+                    from .state import conversation
+                    conversation._suppress_message_update = True
+                    try:
+                        scene.bm_input_text = msg_text
+                    finally:
+                        conversation._suppress_message_update = False
                     try:
                         bpy.ops.blendermentor.send_message('EXEC_DEFAULT')
                     except Exception as e:
@@ -363,7 +368,12 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             def _sync_interim_text():
                 scene = getattr(bpy.context, "scene", None)
                 if scene:
-                    scene.bm_input_text = interim_text
+                    from .state import conversation
+                    conversation._suppress_message_update = True
+                    try:
+                        scene.bm_input_text = interim_text
+                    finally:
+                        conversation._suppress_message_update = False
                     for window in bpy.context.window_manager.windows:
                         for area in window.screen.areas:
                             area.tag_redraw()
