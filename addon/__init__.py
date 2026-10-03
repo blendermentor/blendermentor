@@ -29,6 +29,20 @@ def register():
     chat_panel.register()
     server.start_server(port=8765)
 
+    # Automatically open the browser companion if enabled in preferences
+    def _auto_open():
+        import webbrowser
+        try:
+            prefs = bpy.context.preferences.addons.get(__package__)
+            if prefs and getattr(prefs.preferences, "auto_open_browser", True):
+                if not server.is_companion_connected(timeout=2.0):
+                    webbrowser.open("http://127.0.0.1:8765")
+        except Exception as e:
+            print(f"[BlenderMentor] Could not auto-open browser: {e}")
+        return None
+
+    bpy.app.timers.register(_auto_open, first_interval=1.0)
+
 
 def unregister():
     server.stop_server()

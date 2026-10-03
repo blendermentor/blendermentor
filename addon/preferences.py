@@ -301,6 +301,12 @@ class BlenderMentorPreferences(bpy.types.AddonPreferences):
         default=True,
     )
 
+    auto_open_browser: bpy.props.BoolProperty(
+        name="Auto-open Browser Companion",
+        description="Automatically open the Browser Companion in your web browser when Blender starts",
+        default=True,
+    )
+
     def get_selected_model_id(self) -> str:
         """Return the model id string from the enum or a sensible default."""
         try:
@@ -345,6 +351,7 @@ class BlenderMentorPreferences(bpy.types.AddonPreferences):
         box.prop(self, "developer_mode")
         box.prop(self, "allow_python_eval")
         box.prop(self, "enable_web_search")
+        box.prop(self, "auto_open_browser")
 
 
 # ---------------------------------------------------------------------------

@@ -74,6 +74,7 @@ On first use, the preferences panel guides the user to configure their AI provid
 - "Test Connection" button: fires a minimal API call to confirm the key and selected model work
 - Helper link: opens Google AI Studio or Anthropic Console in the browser
 - Developer Mode toggle (see section below)
+- Auto-open Browser Companion toggle (default: ON) — automatically opens the companion web app when Blender starts
 - Keys are stored in `bpy.types.AddonPreferences` — never in the `.blend` file
 
 ### 2. Chat Panel

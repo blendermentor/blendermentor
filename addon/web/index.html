@@ -1073,10 +1073,17 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       if (data.remote_mic_abort) {
         fetch("/api/remote_mic_abort_ack", { method: "POST" }).catch(() => {});
         if (isUserDictating || isRemoteDictating) {
+          // Press 1: Stop listening, but keep transcribed text in the input box for editing!
           isRemoteDictating = false;
           if (typeof stopDictation === "function") {
-            stopDictation(false);
+            stopDictation(true);
           }
+        } else {
+          // Press 2: Dictation is already stopped -> completely clear text box and dictation buffer
+          chatInput.value = "";
+          confirmedDictation = "";
+          interimDictation = "";
+          chatInput.focus();
         }
       }
 
@@ -1544,12 +1551,42 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     btnPrev.onclick = () => stepNav("prev");
     btnNext.onclick = () => stepNav("next");
 
-    // Global keyboard navigation: Alt + Arrow keys (or plain Left/Right when not typing)
+    // Global keyboard navigation & dictation: Alt + Arrow keys (or plain Left/Right when not typing)
     window.addEventListener("keydown", (e) => {
       const activeEl = document.activeElement;
       const isTyping = activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA" || activeEl.isContentEditable);
 
-      if (e.altKey && (e.key === "ArrowRight" || e.code === "ArrowRight")) {
+      if (e.altKey && (e.key === "ArrowUp" || e.code === "ArrowUp")) {
+        e.preventDefault();
+        if (isUserDictating || isRemoteDictating) {
+          // Finish and send!
+          if (typeof stopDictation === "function") {
+            stopDictation(false);
+          }
+          if (chatInput.value.trim()) {
+            sendChat(chatInput.value);
+          }
+        } else {
+          // Start dictation
+          if (typeof startDictation === "function") {
+            startDictation();
+          }
+        }
+      } else if (e.altKey && (e.key === "ArrowDown" || e.code === "ArrowDown")) {
+        e.preventDefault();
+        if (isUserDictating || isRemoteDictating) {
+          // Press 1: Stop listening, keep text in box for review/editing
+          if (typeof stopDictation === "function") {
+            stopDictation(true);
+          }
+        } else {
+          // Press 2: Clear input text box completely
+          chatInput.value = "";
+          confirmedDictation = "";
+          interimDictation = "";
+          chatInput.focus();
+        }
+      } else if (e.altKey && (e.key === "ArrowRight" || e.code === "ArrowRight")) {
         e.preventDefault();
         stepNav("next");
       } else if (e.altKey && (e.key === "ArrowLeft" || e.code === "ArrowLeft")) {
