@@ -560,6 +560,7 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
             "tool_choice": {"type": "none"},
             "messages": messages,
             "thinking": {
+                "type": "adaptive",
                 "block_binding": {
                     "prefix_mismatch_behavior": "drop_block"
                 }
