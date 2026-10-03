@@ -400,9 +400,10 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .btn-mic.listening {
-      background-color: var(--red);
-      border-color: var(--red);
+      background-color: #6da22f;
+      border-color: #6da22f;
       color: #fff;
+      box-shadow: 0 0 12px rgba(109, 162, 47, 0.6);
       animation: pulse 1s infinite;
     }
 
@@ -412,11 +413,11 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       align-items: center;
       gap: 10px;
       padding: 8px 14px;
-      background-color: rgba(235, 75, 75, 0.15);
-      border: 1px solid rgba(235, 75, 75, 0.4);
+      background-color: rgba(109, 162, 47, 0.15);
+      border: 1px solid rgba(109, 162, 47, 0.4);
       border-radius: var(--radius);
       font-size: 13px;
-      color: #ffcdd2;
+      color: #dcedc8;
       margin: 0 16px 10px 16px;
       transition: background-color 0.2s, border-color 0.2s;
     }
@@ -438,7 +439,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     .mic-wave-bar {
       width: 3px;
       height: 16px;
-      background-color: #ff5252;
+      background-color: #6da22f;
       border-radius: 2px;
       transform-origin: bottom;
       transform: scaleY(0.25);
@@ -1842,6 +1843,12 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
           chatInput.value = fullText;
           if (fullText) {
             micStatusText.textContent = `🗣️ Hearing: "${(interimDictation || fullText)}"`;
+            // Live sync to Blender N-panel text field
+            fetch("/api/transcribe_interim", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: fullText })
+            }).catch(() => {});
           }
         };
 

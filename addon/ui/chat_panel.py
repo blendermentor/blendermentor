@@ -17,6 +17,13 @@ def get_logo_icon_id():
         return pcoll["logo"].icon_id
     return 0
 
+def get_mic_icon_id(active: bool = False):
+    pcoll = _preview_collections.get("main")
+    key = "mic_active" if active else "mic"
+    if pcoll and key in pcoll:
+        return pcoll[key].icon_id
+    return 0
+
 from ..ai_client import ask_ai
 from ..scene_reader import get_basic_context_json, get_scene_context
 from .highlight import (
@@ -621,6 +628,39 @@ class BLENDERMENTOR_OT_cancel_followup(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERMENTOR_OT_info(bpy.types.Operator):
+    bl_idname = "blendermentor.info"
+    bl_label = "BlenderMentor Info"
+    bl_description = (
+        "BlenderMentor: AI teaching assistant that guides you step-by-step through Blender.\n\n"
+        "How to use:\n"
+        "• Type question below & click Play / Send\n"
+        "• Voice Dictate: Alt + ↑ (Option + ↑ on Mac)\n"
+        "• Cancel Voice / Clear Input: Alt + ↓\n"
+        "• Guided Steps: Alt + → (Next) / Alt + ← (Prev)"
+    )
+
+    def execute(self, context):
+        return {'FINISHED'}
+
+    def invoke(self, context, event):
+        return context.window_manager.invoke_popup(self, width=290)
+
+    def draw(self, context):
+        layout = self.layout
+        col = layout.column(align=True)
+        col.label(text="BlenderMentor", icon='INFO')
+        col.separator()
+        col.label(text="AI assistant teaching you Blender step-by-step.")
+        col.label(text="Highlights active UI elements as you navigate.")
+        col.separator()
+        col.label(text="Quick Shortcuts:")
+        col.label(text="• Alt + ↑ : Start / Finalize Voice")
+        col.label(text="• Alt + ↓ : Cancel Voice / Clear Input")
+        col.label(text="• Alt + → : Next Guided Step")
+        col.label(text="• Alt + ← : Previous Guided Step")
+
+
 # Dev-mode operators
 class BLENDERMENTOR_OT_test_highlight(bpy.types.Operator):
     bl_idname = "blendermentor.test_highlight"
@@ -860,6 +900,9 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         else:
             row.label(text="BlenderMentor", icon='WINDOW')
 
+        # Information button
+        row.operator("blendermentor.info", text="", icon='INFO')
+
         # DEV badge
         addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
         if addon_prefs and addon_prefs.preferences.developer_mode:
@@ -900,16 +943,26 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             layout.separator(factor=0.5)
 
         # -------------------------------------------------------------
-        # 2. Voice Dictation Button
+        # 2. Voice Dictation Button & Text Input Field
         # -------------------------------------------------------------
-        mic_box = layout.box()
-        mic_col = mic_box.column(align=True)
-        mic_col.scale_y = 1.45
-        if scene.bm_remote_mic_active:
-            mic_col.alert = True
-            mic_col.operator("blendermentor.hybrid_mic", text="Listening... (Alt + ↑ Send, Alt + ↓ Cancel)", icon='REC')
+        mic_row = layout.row(align=True)
+        mic_row.scale_y = 1.6
+        mic_icon_id = get_mic_icon_id(active=scene.bm_remote_mic_active)
+        if mic_icon_id:
+            mic_row.operator("blendermentor.hybrid_mic", text="", icon_value=mic_icon_id)
         else:
-            mic_col.operator("blendermentor.hybrid_mic", text="Voice Dictation (Alt + ↑)", icon='SOUND')
+            mic_icon = 'REC' if scene.bm_remote_mic_active else 'SOUND'
+            mic_row.operator("blendermentor.hybrid_mic", text="", icon=mic_icon)
+
+        # Text input field just below the voice dictate icon with send button
+        input_row = layout.row(align=True)
+        input_row.scale_y = 1.25
+        input_row.prop(scene, "bm_input_text", text="")
+        send_btn = input_row.operator("blendermentor.send_message", text="", icon='PLAY')
+        if scene.bm_is_processing:
+            send_btn.enabled = False
+
+        layout.separator(factor=0.3)
 
         # -------------------------------------------------------------
         # 2. Step Navigator & Remote Controls (Only when steps exist)
@@ -990,12 +1043,6 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                     else:
                         fin_col.label(text=f"  {fl}")
 
-        elif total == 0:
-            # Idle ready state when no active quest/steps
-            empty_box = layout.box()
-            empty_col = empty_box.column(align=True)
-            empty_col.label(text="BlenderMentor Ready", icon='WORLD')
-            empty_col.label(text="Ask in Browser Companion or press Mic (Alt + ↑) to begin.")
 
         # -------------------------------------------------------------
         # 4. Live status indicator (Thinking...)
@@ -1119,6 +1166,7 @@ _classes = (
     BLENDERMENTOR_OT_step_goto,
     BLENDERMENTOR_OT_ask_step,
     BLENDERMENTOR_OT_cancel_followup,
+    BLENDERMENTOR_OT_info,
     BLENDERMENTOR_OT_test_highlight,
     BLENDERMENTOR_OT_open_youtube_search,
     BLENDERMENTOR_OT_load_mock_steps,
@@ -1200,6 +1248,12 @@ def register():
         logo_path = os.path.join(icons_dir, "logo.png")
         if os.path.exists(logo_path):
             pcoll.load("logo", logo_path, 'IMAGE')
+        mic_path = os.path.join(icons_dir, "mic.png")
+        if os.path.exists(mic_path):
+            pcoll.load("mic", mic_path, 'IMAGE')
+        mic_active_path = os.path.join(icons_dir, "mic_active.png")
+        if os.path.exists(mic_active_path):
+            pcoll.load("mic_active", mic_active_path, 'IMAGE')
         _preview_collections["main"] = pcoll
     except Exception as e:
         print(f"[BlenderMentor] Warning: Could not load preview collection: {e}")

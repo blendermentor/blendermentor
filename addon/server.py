@@ -357,6 +357,24 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "stopped"}).encode("utf-8"))
             return
 
+        # 7. Interim speech transcription sync: live speech updates Blender text field
+        if self.path == "/api/transcribe_interim":
+            interim_text = req_data.get("text", "")
+            def _sync_interim_text():
+                scene = getattr(bpy.context, "scene", None)
+                if scene:
+                    scene.bm_input_text = interim_text
+                    for window in bpy.context.window_manager.windows:
+                        for area in window.screen.areas:
+                            area.tag_redraw()
+                return None
+            bpy.app.timers.register(_sync_interim_text, first_interval=0.001)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(b'{"status":"ok"}')
+            return
+
         self.send_response(404)
         self.end_headers()
 

@@ -80,19 +80,23 @@ On first use, the preferences panel guides the user to configure their AI provid
 ### 2. Chat Panel
 - Located in the **N-panel sidebar** of the 3D Viewport (`View3D > Sidebar > BlenderMentor` tab)
 - Streamlined as a distraction-free **Remote Control** that keeps your 3D viewport clean by default
-- Shows a **"Start BlenderMentor"** button when the browser companion is not connected, letting you launch it with one click
-- Shows only the **Active Step Card** with its official Blender icon, instruction title, context/reasoning box, quick re-highlight (`💡`), follow-up (`❓`), and compact tutorial (`URL`) buttons
-- Clean idle state: Prev/Next and empty counters are hidden until steps are active
-- **🎙️ Smart Voice Dictation (`Alt + ↑`)**:
-  - Tap or press **`Alt + ↑`** (`Option + ↑` on macOS) to toggle voice dictation
-  - If the browser companion isn't running, pressing the Mic or shortcut **automatically launches the browser companion** and starts listening seamlessly
+- **Header**: Custom logo to the left of "BlenderMentor", and an **Information Button (`icon='INFO'`)** to the right with hover explanation and shortcut guide popup
+- Shows a **"Start BlenderMentor"** button with the custom logo when the browser companion is not connected, letting you launch it with one click
+- **🎙️ Icon-Only Voice Dictation**:
+  - Tap button or press **`Alt + ↑`** (`Option + ↑` on macOS) to start speaking
+  - Visual listening state: surrounded by a distinctive **green `rgb(109, 162, 47)` ring** (both in Blender and the Browser Companion)
   - Tap again or press `Alt + ↑` to stop dictation and submit your question
+- **💬 Integrated Text Input & Send Button**:
+  - Located directly below the voice dictation button
+  - Type questions directly in Blender and click the Play/Send button (or press Enter)
+  - Spoken words stream directly into this text field in real time as you speak
+- Shows only the **Active Step Card** with its official Blender icon, instruction title, context/reasoning box, quick re-highlight (`💡`), follow-up (`❓`), and compact tutorial (`URL`) buttons
+- Clean idle state: Prev/Next, empty counters, and idle placeholder text boxes are completely hidden until steps are active
 - **Global Shortcuts**:
   - **`Alt + ↑`** (`Option + ↑` on macOS): Toggle voice dictation (tap to listen, tap again to finalize and send)
   - **`Alt + ↓`** (`Option + ↓` on macOS): Cancel voice dictation without sending (transcribed text remains in the text box for editing; pressing again clears the box)
   - **`Alt + →`** (`Option + →` on macOS): Advance to next step from *any* editor in Blender (3D View, Properties, Outliner, Nodes, Timeline)
   - **`Alt + ←`** (`Option + ←` on macOS): Go back to previous step globally
-- **BlenderMentor Branding**: Custom logo integrated into the N-panel header (to the left of the title) and the Browser Companion (header & favicon)
 - Conversation history stored in `bpy.types.Scene` — persists with the `.blend` file and is shared across all Blender editor windows
 - **Follow-up questions**: each step has an **Ask ❓** button — clicking it puts the input into follow-up mode, and the AI receives the previous response as context to provide an improved, clarified step list
 
