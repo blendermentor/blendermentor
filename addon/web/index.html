@@ -367,17 +367,22 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       border-top: 1px solid var(--border);
       display: flex;
       gap: 10px;
-      align-items: center;
+      align-items: flex-end;
+    }
+
+    .chat-input-bar button {
+      height: 42px;
+      flex-shrink: 0;
     }
 
     .input-wrapper {
       flex: 1;
       position: relative;
       display: flex;
-      align-items: center;
+      align-items: flex-end;
     }
 
-    input[type="text"] {
+    textarea#chatInput, input[type="text"] {
       width: 100%;
       background-color: var(--bg-dark);
       border: 1px solid var(--border);
@@ -385,11 +390,19 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       padding: 10px 14px;
       border-radius: var(--radius);
       font-size: 14px;
+      font-family: inherit;
+      line-height: 1.4;
+      min-height: 42px;
+      max-height: 160px;
+      height: 42px;
+      resize: none;
       outline: none;
+      box-sizing: border-box;
+      overflow-y: hidden;
       transition: border-color 0.15s;
     }
 
-    input[type="text"]:focus {
+    textarea#chatInput:focus, input[type="text"]:focus {
       border-color: var(--accent);
     }
 
@@ -884,7 +897,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
             <span>🎙️</span>
           </button>
           <div class="input-wrapper">
-            <input type="text" id="chatInput" placeholder="Ask a question or request guidance..." autocomplete="off" />
+            <textarea id="chatInput" rows="1" placeholder="Ask a question or request guidance..." autocomplete="off"></textarea>
           </div>
           <button id="btnSend" class="primary">
             <span>➤</span>
@@ -957,6 +970,22 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     const ttsModeSelect = document.getElementById("ttsModeSelect");
     const ttsRateSelect = document.getElementById("ttsRateSelect");
     const stepsContainer = document.getElementById("stepsContainer");
+
+    // Dynamic auto-expanding height for chatInput textarea (up to 160px max)
+    function autoResizeInput() {
+      if (!chatInput) return;
+      chatInput.style.height = "auto";
+      const newHeight = Math.min(Math.max(chatInput.scrollHeight, 42), 160);
+      chatInput.style.height = newHeight + "px";
+      if (chatInput.scrollHeight > 160) {
+        chatInput.style.overflowY = "auto";
+      } else {
+        chatInput.style.overflowY = "hidden";
+      }
+    }
+    if (chatInput) {
+      chatInput.addEventListener("input", autoResizeInput);
+    }
 
     // Initialize Voice Readout Mode Spinner / Dropdown
     if (ttsModeSelect) {
@@ -1091,6 +1120,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         } else {
           // Press 2: Dictation is already stopped -> completely clear text box and dictation buffer
           chatInput.value = "";
+          autoResizeInput();
           confirmedDictation = "";
           interimDictation = "";
           chatInput.focus();
@@ -1491,6 +1521,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
       // Clear input and cancel followup state locally
       chatInput.value = "";
+      autoResizeInput();
       cancelFollowup(false);
 
       // Show thinking indicator right away
@@ -1592,6 +1623,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         } else {
           // Press 2: Clear input text box completely
           chatInput.value = "";
+          autoResizeInput();
           confirmedDictation = "";
           interimDictation = "";
           chatInput.focus();
@@ -1841,6 +1873,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
           interimDictation = currentPhrase;
           const fullText = (confirmedDictation + interimDictation).trim();
           chatInput.value = fullText;
+          autoResizeInput();
           if (fullText) {
             micStatusText.textContent = `🗣️ Hearing: "${(interimDictation || fullText)}"`;
             // Live sync to Blender N-panel text field

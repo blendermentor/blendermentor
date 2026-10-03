@@ -974,8 +974,22 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         send_btn = send_sub.operator("blendermentor.send_message", text="", icon='PLAY')
         if scene.bm_is_processing:
             send_btn.enabled = False
-
         layout.separator(factor=0.3)
+
+        # Dynamic auto-expanding card for long text (prevents truncation in N-Panel)
+        input_text = scene.bm_input_text.strip()
+        if input_text:
+            lines = textwrap.wrap(input_text, width=max(18, char_width - 4))
+            if len(lines) > 1 or len(input_text) > 25:
+                text_box = layout.box()
+                text_col = text_box.column(align=True)
+                text_col.scale_y = 0.88
+                for idx_line, line in enumerate(lines):
+                    if idx_line == 0:
+                        text_col.label(text=line, icon='SPEECH')
+                    else:
+                        text_col.label(text=f"  {line}")
+                layout.separator(factor=0.3)
 
         # -------------------------------------------------------------
         # 2. Step Navigator & Remote Controls (Only when steps exist)
