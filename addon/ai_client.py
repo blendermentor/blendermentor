@@ -320,8 +320,13 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
-            data = json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode()
+            print(f"[BlenderMentor] Gemini API HTTP {e.code} error: {err_body}")
+            raise RuntimeError(f"Gemini API Error ({e.code}): {err_body}")
 
         # Extract model response parts
         try:
@@ -397,8 +402,15 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
             headers={"Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
-            data = json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode()
+            print(f"[BlenderMentor] Gemini fallback HTTP {e.code} error: {err_body}")
+            fallback_err = f"{e.code} - {err_body}"
+            raise
+
         candidate = data["candidates"][0]["content"]
         parts = candidate.get("parts", [])
         text_parts = [
@@ -408,7 +420,7 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         if text_parts:
             return "".join(text_parts)
     except Exception as e:
-        fallback_err = e
+        fallback_err = fallback_err or e
         print(f"[BlenderMentor] Gemini fallback synthesis error: {e}")
 
     err_detail = f": {fallback_err}" if fallback_err else ""
@@ -448,8 +460,18 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
             "content-type": "application/json",
         }, method="POST")
 
-        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
-            data = json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode()
+            print(f"[BlenderMentor] Claude API HTTP {e.code} error: {err_body}")
+            try:
+                err_json = json.loads(err_body)
+                msg = err_json.get("error", {}).get("message", err_body)
+                raise RuntimeError(f"Claude API Error ({e.code}): {msg}")
+            except Exception:
+                raise RuntimeError(f"Claude API Error ({e.code}): {err_body}")
 
         stop_reason = data.get("stop_reason", "")
         content_blocks = data.get("content", [])
@@ -494,31 +516,40 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
                 "content": json.dumps(result),
             })
 
-        # Append tool results as a user message
-        messages.append({"role": "user", "content": tool_results})
+        # Append tool results as a user message (never append empty content: [])
+        if tool_results:
+            messages.append({"role": "user", "content": tool_results})
+        else:
+            messages.append({
+                "role": "user",
+                "content": [{"type": "text", "text": "Please continue with the gathered information."}]
+            })
 
     # Graceful synthesis fallback: force final text response without tools
     fallback_err = None
     try:
         status_cb("Finalizing guidance...")
         # In Anthropic API, roles must strictly alternate: append text to the EXISTING user turn
+        instruction_block = {
+            "type": "text",
+            "text": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
+        }
         if messages and messages[-1].get("role") == "user":
             user_content = messages[-1].get("content")
-            instruction_block = {
-                "type": "text",
-                "text": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
-            }
             if isinstance(user_content, list):
-                user_content.append(instruction_block)
+                if user_content:
+                    user_content.append(instruction_block)
+                else:
+                    messages[-1]["content"] = [instruction_block]
             else:
                 messages[-1]["content"] = [
-                    {"type": "text", "text": str(user_content)},
+                    {"type": "text", "text": str(user_content or "Please proceed.")},
                     instruction_block
                 ]
         else:
             messages.append({
                 "role": "user",
-                "content": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
+                "content": [instruction_block]
             })
 
         body = json.dumps({
@@ -535,8 +566,19 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
             "content-type": "application/json",
         }, method="POST")
 
-        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
-            data = json.loads(resp.read().decode())
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode()
+            print(f"[BlenderMentor] Claude fallback HTTP {e.code} error: {err_body}")
+            try:
+                err_json = json.loads(err_body)
+                msg = err_json.get("error", {}).get("message", err_body)
+                fallback_err = f"{e.code} - {msg}"
+            except Exception:
+                fallback_err = f"{e.code} - {err_body}"
+            raise
 
         content_blocks = data.get("content", [])
         text_parts = [
@@ -547,7 +589,7 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
         if text_parts:
             return "".join(text_parts)
     except Exception as e:
-        fallback_err = e
+        fallback_err = fallback_err or e
         print(f"[BlenderMentor] Claude fallback synthesis error: {e}")
 
     err_detail = f": {fallback_err}" if fallback_err else ""
