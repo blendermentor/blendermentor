@@ -81,13 +81,14 @@ On first use, the preferences panel guides the user to configure their AI provid
 - Located in the **N-panel sidebar** of the 3D Viewport (`View3D > Sidebar > BlenderMentor` tab)
 - Streamlined as a distraction-free **Remote Control** that keeps your 3D viewport clean by default
 - **Header**: Custom logo to the left of "BlenderMentor", and an **Information Button (`icon='INFO'`)** to the right with hover explanation and shortcut guide popup
-- Shows a **"Start BlenderMentor"** button with the custom logo when the browser companion is not connected, letting you launch it with one click
-- **🎙️ Icon-Only Voice Dictation**:
+- Shows a **"Start BlenderMentor"** button with the custom logo when the browser companion is not connected (mic, text input field, and controls are cleanly hidden until connected)
+- **🎙️ Icon-Only Voice Dictation (Square 1:1)**:
+  - Positioned directly to the **left** of the text field in a 1:1 square button format
   - Tap button or press **`Alt + ↑`** (`Option + ↑` on macOS) to start speaking
   - Visual listening state: surrounded by a distinctive **green `rgb(109, 162, 47)` ring** (both in Blender and the Browser Companion)
   - Tap again or press `Alt + ↑` to stop dictation and submit your question
 - **💬 Integrated Text Input & Send Button**:
-  - Located directly below the voice dictation button
+  - Located beside the voice dictation button
   - Type questions directly in Blender and click the Play/Send button (or press Enter)
   - Spoken words stream directly into this text field in real time as you speak
 - Shows only the **Active Step Card** with its official Blender icon, instruction title, context/reasoning box, quick re-highlight (`💡`), follow-up (`❓`), and compact tutorial (`URL`) buttons

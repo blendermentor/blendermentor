@@ -941,16 +941,18 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                     icon='WINDOW'
                 )
             layout.separator(factor=0.5)
+            return
 
         # -------------------------------------------------------------
-        # 2. Unified Input Bar: [Mic Button] [Text Field] [Send Button]
+        # 2. Unified Input Bar: [Mic Button (1:1 square)] [Text Field + Send]
+        # (Displayed only when connected to browser companion)
         # -------------------------------------------------------------
-        input_row = layout.row(align=True)
-        input_row.scale_y = 1.45
+        bar = layout.row(align=False)
+        bar.scale_y = 1.4
 
-        # 1. Mic Button (Square 1:1, to the left of the text field)
-        mic_sub = input_row.row(align=True)
-        mic_sub.ui_units_x = 1.45
+        # 1. Mic Button (Standalone Square 1:1, to the left of the text field)
+        mic_sub = bar.row(align=True)
+        mic_sub.scale_x = 1.55
         mic_icon_id = get_mic_icon_id(active=scene.bm_remote_mic_active)
         if mic_icon_id:
             mic_sub.operator("blendermentor.hybrid_mic", text="", icon_value=mic_icon_id)
@@ -958,12 +960,11 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             mic_icon = 'REC' if scene.bm_remote_mic_active else 'SOUND'
             mic_sub.operator("blendermentor.hybrid_mic", text="", icon=mic_icon)
 
-        # 2. Text input field (occupies all remaining space in the middle)
-        input_row.prop(scene, "bm_input_text", text="")
-
-        # 3. Send button (Square 1:1, to the right of the text field)
-        send_sub = input_row.row(align=True)
-        send_sub.ui_units_x = 1.45
+        # 2. Text input field & Send button (connected together)
+        input_sub = bar.row(align=True)
+        input_sub.prop(scene, "bm_input_text", text="")
+        send_sub = input_sub.row(align=True)
+        send_sub.scale_x = 1.2
         send_btn = send_sub.operator("blendermentor.send_message", text="", icon='PLAY')
         if scene.bm_is_processing:
             send_btn.enabled = False
