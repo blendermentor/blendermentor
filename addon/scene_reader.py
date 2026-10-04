@@ -20,7 +20,7 @@ import platform
 # ---------------------------------------------------------------------------
 
 def get_basic_context() -> dict:
-    """Return a lightweight dict with only the essentials the AI always needs."""
+    """Return a rich yet compact dict with the scene essentials so the AI can answer immediately."""
     ctx = {}
     scene = bpy.context.scene
     obj = bpy.context.active_object
@@ -34,6 +34,69 @@ def get_basic_context() -> dict:
     ctx["active_object_type"] = obj.type if obj else None
     ctx["mode"] = bpy.context.mode
     ctx["render_engine"] = scene.render.engine
+
+    # Selection state
+    selected = bpy.context.selected_objects
+    ctx["selected_objects"] = [{"name": o.name, "type": o.type} for o in selected]
+    ctx["selection_count"] = len(selected)
+
+    # Active object details (modifiers, materials, transforms, mesh topology)
+    if obj:
+        obj_info = {
+            "scale": [round(s, 4) for s in obj.scale],
+            "scale_applied": all(abs(s - 1.0) < 0.001 for s in obj.scale),
+            "visible": obj.visible_get(),
+        }
+        if hasattr(obj, "dimensions"):
+            obj_info["dimensions"] = [round(d, 4) for d in obj.dimensions]
+
+        # Existing modifiers on active object
+        if hasattr(obj, "modifiers"):
+            obj_info["modifiers"] = [
+                {"name": m.name, "type": m.type, "show_viewport": m.show_viewport}
+                for m in obj.modifiers
+            ]
+
+        # Materials on active object
+        if hasattr(obj, "data") and hasattr(obj.data, "materials"):
+            obj_info["materials"] = [m.name for m in obj.data.materials if m]
+
+        # Mesh topology count
+        if obj.type == 'MESH' and obj.data:
+            obj_info["vertex_count"] = len(obj.data.vertices)
+            obj_info["face_count"] = len(obj.data.polygons)
+
+        ctx["active_object_details"] = obj_info
+    else:
+        ctx["active_object_details"] = None
+
+    # Viewport state & shading mode
+    viewport_info = {
+        "shading_type": "SOLID",
+        "show_overlays": True,
+        "show_gizmo": True,
+    }
+    try:
+        for area in bpy.context.screen.areas:
+            if area.type == 'VIEW_3D':
+                space = area.spaces.active
+                if space and space.type == 'VIEW_3D':
+                    viewport_info["shading_type"] = space.shading.type
+                    viewport_info["show_overlays"] = space.overlay.show_overlays
+                    viewport_info["show_gizmo"] = space.show_gizmo
+                    break
+    except Exception:
+        pass
+    ctx["viewport_state"] = viewport_info
+
+    # Active tool in 3D Viewport
+    try:
+        tool = bpy.context.workspace.tools.from_space_view3d_mode(
+            bpy.context.mode, create=False
+        )
+        ctx["active_tool"] = tool.idname if tool else None
+    except Exception:
+        ctx["active_tool"] = None
 
     # Collect all editor types currently visible on screen
     try:
