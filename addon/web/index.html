@@ -487,16 +487,32 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .btn-mic {
-      padding: 9px 12px;
+      width: 42px;
+      height: 42px;
+      padding: 0;
       border-radius: var(--radius);
-      transition: background-color 0.2s, border-color 0.2s;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-mic-img {
+      width: 22px;
+      height: 22px;
+      object-fit: contain;
+      display: block;
+      pointer-events: none;
     }
 
     .btn-mic.listening {
-      background-color: #6da22f;
+      background-color: rgba(109, 162, 47, 0.22);
       border-color: #6da22f;
-      color: #fff;
-      box-shadow: 0 0 12px rgba(109, 162, 47, 0.6);
+      box-shadow: 0 0 0 2px #6da22f, 0 0 12px rgba(109, 162, 47, 0.6);
       animation: pulse 1s infinite;
     }
 
@@ -1100,7 +1116,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
         <div class="chat-input-bar">
           <button id="btnMic" class="btn-mic" title="Click to speak (Voice Input)">
-            <span class="btn-icon-svg" id="micIconSlot"></span>
+            <img src="mic.png" alt="Mic" id="btnMicImg" class="btn-mic-img" />
           </button>
           <div class="input-wrapper">
             <textarea id="chatInput" rows="1" placeholder="Ask a question or request guidance..." autocomplete="off"></textarea>
@@ -1606,9 +1622,6 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       const clearSlot = document.getElementById("clearIconSlot");
       if (clearSlot) clearSlot.innerHTML = getIconRawSVG("trash");
 
-      const micSlot = document.getElementById("micIconSlot");
-      if (micSlot) micSlot.innerHTML = getIconRawSVG("sound");
-
       const emptySlot = document.getElementById("emptyIconSlot");
       if (emptySlot) emptySlot.innerHTML = getIconRawSVG("info_large") || getIconRawSVG("help") || "";
     }
@@ -2006,6 +2019,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       if (btnMic) {
         btnMic.classList.remove("listening");
         btnMic.title = "Click to speak (Voice Input)";
+        const micImg = document.getElementById("btnMicImg");
+        if (micImg) micImg.src = "mic.png";
       }
 
       if (recognitionInstance) {
@@ -2057,6 +2072,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
 
       btnMic.classList.add("listening");
       btnMic.title = "Listening... click to stop";
+      const micImg = document.getElementById("btnMicImg");
+      if (micImg) micImg.src = "mic_active.png";
       if (micStatusBanner) {
         micStatusBanner.style.display = "flex";
         micStatusBanner.classList.remove("error");

@@ -984,15 +984,8 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                 text_box = layout.box()
                 text_col = text_box.column(align=True)
                 text_col.scale_y = 0.88
-                card_icon = 'SOUND' if scene.bm_remote_mic_active else 'TEXT'
-                for idx_line, line in enumerate(lines):
-                    try:
-                        if idx_line == 0:
-                            text_col.label(text=line, icon=card_icon)
-                        else:
-                            text_col.label(text=f"  {line}")
-                    except Exception:
-                        text_col.label(text=line)
+                for line in lines:
+                    text_col.label(text=line)
                 layout.separator(factor=0.3)
 
         # -------------------------------------------------------------
