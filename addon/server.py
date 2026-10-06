@@ -192,6 +192,34 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 self.wfile.write(err_payload)
                 return
 
+        # 4. API Exchange Logs Endpoint
+        if self.path in ("/api/logs", "/api/logs/"):
+            try:
+                from .logger import get_full_log, get_last_exchange, get_log_filepath
+                log_content = get_full_log()
+                last_exchange = get_last_exchange()
+                filepath = get_log_filepath()
+                data = {
+                    "filepath": filepath,
+                    "last_exchange": last_exchange,
+                    "full_log": log_content,
+                }
+                payload = json.dumps(data).encode("utf-8")
+                self.send_response(200)
+                self._set_cors_headers("application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers()
+                self.wfile.write(payload)
+                return
+            except Exception as e:
+                err_payload = json.dumps({"error": str(e)}).encode("utf-8")
+                self.send_response(500)
+                self._set_cors_headers()
+                self.send_header("Content-Length", str(len(err_payload)))
+                self.end_headers()
+                self.wfile.write(err_payload)
+                return
+
         self.send_response(404)
         self.end_headers()
 

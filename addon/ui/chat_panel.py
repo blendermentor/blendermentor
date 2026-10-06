@@ -26,6 +26,13 @@ def get_mic_icon_id(active: bool = False):
 
 from ..ai_client import ask_ai
 from ..scene_reader import get_basic_context_json, get_scene_context
+from ..logger import (
+    get_log_filepath,
+    get_last_exchange,
+    get_full_log,
+    clear_log,
+    sync_to_blender_text,
+)
 from .highlight import (
     trigger_highlight_from_json,
     clear_all_highlights,
@@ -107,6 +114,14 @@ def _poll_worker_done():
         _apply_ai_response(scene, result)
 
     scene.bm_followup_step = -1
+
+    # In developer mode, mirror exchange into Blender Text Editor
+    try:
+        addon_prefs = bpy.context.preferences.addons.get(__package__.rpartition('.')[0])
+        if addon_prefs and getattr(addon_prefs.preferences, "developer_mode", False):
+            sync_to_blender_text()
+    except Exception as e:
+        print(f"[BlenderMentor] Error syncing log in _poll_worker_done: {e}")
 
     # Clean up
     with _worker_lock:
@@ -408,6 +423,7 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
             "model_id": prefs.get_selected_model_id(),
             "ollama_host": getattr(prefs, 'ollama_host', 'http://localhost:11434'),
             "enable_web_search": getattr(prefs, 'enable_web_search', True),
+            "developer_mode": getattr(prefs, 'developer_mode', False),
         }
 
         # Mark processing state
@@ -822,6 +838,68 @@ class BLENDERMENTOR_OT_test_docs_fetch(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERMENTOR_OT_open_log_file(bpy.types.Operator):
+    bl_idname = "blendermentor.open_log_file"
+    bl_label = "Open Log File"
+    bl_description = "Open blendermentor_api.log in your system default text editor"
+
+    def execute(self, context):
+        log_path = get_log_filepath()
+        if not os.path.exists(log_path):
+            with open(log_path, "w", encoding="utf-8") as f:
+                f.write("(BlenderMentor API Exchange Log initialized)\n")
+
+        try:
+            bpy.ops.wm.path_open(filepath=log_path)
+            self.report({'INFO'}, f"Opened {os.path.basename(log_path)}")
+        except Exception as e:
+            self.report({'ERROR'}, f"Failed to open log file: {e}")
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_view_in_blender_text(bpy.types.Operator):
+    bl_idname = "blendermentor.view_in_blender_text"
+    bl_label = "Inspect in Text Editor"
+    bl_description = "Open or switch to Blender Text Editor showing BlenderMentor_Log.txt"
+
+    def execute(self, context):
+        sync_to_blender_text()
+        text_block = bpy.data.texts.get("BlenderMentor_Log.txt")
+
+        # Check if any existing area is TEXT_EDITOR
+        text_area = None
+        for area in context.screen.areas:
+            if area.type == 'TEXT_EDITOR':
+                text_area = area
+                break
+
+        if text_area:
+            # Set the space's active text datablock
+            for space in text_area.spaces:
+                if space.type == 'TEXT_EDITOR':
+                    space.text = text_block
+                    break
+            text_area.tag_redraw()
+            self.report({'INFO'}, "Updated Blender Text Editor with latest API log.")
+        else:
+            # Look for an editor to split, or guide user
+            self.report({'INFO'}, "Log synced to 'BlenderMentor_Log.txt'. Open a Text Editor area to view.")
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_clear_log_file(bpy.types.Operator):
+    bl_idname = "blendermentor.clear_log_file"
+    bl_label = "Clear Logs"
+    bl_description = "Clear blendermentor_api.log and reset in-memory exchange"
+
+    def execute(self, context):
+        clear_log()
+        sync_to_blender_text(content="(Log cleared)\n")
+        self.report({'INFO'}, "BlenderMentor API logs cleared.")
+        return {'FINISHED'}
+
+
+
 # ---------------------------------------------------------------------------
 # Helper: follow-up prompt builder
 # ---------------------------------------------------------------------------
@@ -1160,6 +1238,26 @@ class BLENDERMENTOR_PT_devtools(bpy.types.Panel):
         row.operator("blendermentor.test_stackexchange", text="Stack Exchange", icon='COMMUNITY')
         row.operator("blendermentor.test_docs_fetch", text="Docs Fetch", icon='HELP')
 
+        layout.separator()
+
+        # --- API Exchange Logs ---
+        layout.label(text="API Exchange Logs", icon='TEXT')
+        log_box = layout.box()
+        col = log_box.column(align=True)
+        col.scale_y = 0.7
+        log_path = get_log_filepath()
+        col.label(text=f"File: {os.path.basename(log_path)}")
+        exists = os.path.exists(log_path)
+        size_kb = os.path.getsize(log_path) / 1024.0 if exists else 0.0
+        col.label(text=f"Size: {size_kb:.1f} KB")
+
+        row = log_box.row(align=True)
+        row.operator("blendermentor.open_log_file", text="Open in Editor", icon='FILE_TEXT')
+        row.operator("blendermentor.view_in_blender_text", text="Blender Text", icon='TEXT')
+
+        row_clr = log_box.row(align=True)
+        row_clr.operator("blendermentor.clear_log_file", text="Clear Log File", icon='TRASH')
+
 
 # ---------------------------------------------------------------------------
 # Utilities
@@ -1196,9 +1294,13 @@ _classes = (
     BLENDERMENTOR_OT_load_mock_steps,
     BLENDERMENTOR_OT_test_stackexchange,
     BLENDERMENTOR_OT_test_docs_fetch,
+    BLENDERMENTOR_OT_open_log_file,
+    BLENDERMENTOR_OT_view_in_blender_text,
+    BLENDERMENTOR_OT_clear_log_file,
     BLENDERMENTOR_PT_chat,
     BLENDERMENTOR_PT_devtools,
 )
+
 
 
 

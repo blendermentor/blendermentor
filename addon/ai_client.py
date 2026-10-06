@@ -8,10 +8,13 @@
 
 import json
 import ssl
+import time
 import urllib.request
 import urllib.error
+from datetime import datetime
 
 from .scene_reader import TOOL_REGISTRY, execute_tool
+from .logger import log_api_exchange
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -261,6 +264,24 @@ def ask_ai(prefs, basic_context_json: str, user_message: str,
         raise RuntimeError("Internet access is disabled in Blender's System Preferences (Allow Internet Access).")
 
     provider = prefs.provider
+    dev_mode = getattr(prefs, "developer_mode", False)
+
+    session = None
+    if dev_mode:
+        model_name = getattr(prefs, "get_selected_model_id", lambda: "unknown")()
+        session = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "provider": provider,
+            "model": model_name,
+            "prompt": user_message,
+            "base_ctx": basic_context_json,
+            "rounds": [],
+            "raw_response": "",
+            "error": None,
+            "latency": 0.0,
+        }
+
+    t0 = time.time()
 
     def _status(msg):
         if status_callback:
@@ -268,14 +289,27 @@ def ask_ai(prefs, basic_context_json: str, user_message: str,
 
     _status("Thinking...")
 
-    if provider == 'GEMINI':
-        raw = _gemini_tool_loop(prefs, basic_context_json, user_message, _status)
-    elif provider == 'CLAUDE':
-        raw = _claude_tool_loop(prefs, basic_context_json, user_message, _status)
-    elif provider == 'OLLAMA':
-        raw = _ollama_tool_loop(prefs, basic_context_json, user_message, _status)
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    try:
+        if provider == 'GEMINI':
+            raw = _gemini_tool_loop(prefs, basic_context_json, user_message, _status, session=session)
+        elif provider == 'CLAUDE':
+            raw = _claude_tool_loop(prefs, basic_context_json, user_message, _status, session=session)
+        elif provider == 'OLLAMA':
+            raw = _ollama_tool_loop(prefs, basic_context_json, user_message, _status, session=session)
+        else:
+            raise ValueError(f"Unknown provider: {provider}")
+
+        if session:
+            session["latency"] = time.time() - t0
+            session["raw_response"] = raw
+            log_api_exchange(session)
+
+    except Exception as e:
+        if session:
+            session["latency"] = time.time() - t0
+            session["error"] = str(e)
+            log_api_exchange(session)
+        raise
 
     _status("Processing response...")
     return _parse_response(raw)
@@ -292,7 +326,7 @@ def list_models(provider: str, api_key: str) -> list:
 # ---------------------------------------------------------------------------
 
 def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
-                      status_cb) -> str:
+                      status_cb, session: dict = None) -> str:
     """Run the Gemini generateContent loop with tool calling."""
     ctx = ssl.create_default_context()
     url = (
@@ -355,6 +389,8 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
 
         # Execute each tool call and build function responses
         func_response_parts = []
+        round_log = {"round": round_num + 1, "tool_calls": []} if session is not None else None
+
         for fc_part in function_calls:
             fc = fc_part["functionCall"]
             tool_name = fc["name"]
@@ -374,6 +410,13 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
             # Execute the tool
             result = execute_tool(tool_name, tool_args)
 
+            if round_log is not None:
+                round_log["tool_calls"].append({
+                    "name": tool_name,
+                    "args": tool_args,
+                    "result": result,
+                })
+
             fr = {
                 "functionResponse": {
                     "name": tool_name,
@@ -384,6 +427,9 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
                 fr["functionResponse"]["id"] = call_id
 
             func_response_parts.append(fr)
+
+        if session is not None and round_log is not None:
+            session["rounds"].append(round_log)
 
         # Append tool results to conversation
         contents.append({"role": "function", "parts": func_response_parts})
@@ -436,7 +482,7 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
 # ---------------------------------------------------------------------------
 
 def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
-                      status_cb) -> str:
+                      status_cb, session: dict = None) -> str:
     """Run the Claude messages loop with tool calling."""
     ctx = ssl.create_default_context()
     url = "https://api.anthropic.com/v1/messages"
@@ -495,6 +541,8 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
 
         # Execute each tool call
         tool_results = []
+        round_log = {"round": round_num + 1, "tool_calls": []} if session is not None else None
+
         for block in content_blocks:
             if block.get("type") != "tool_use":
                 continue
@@ -514,11 +562,21 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
 
             result = execute_tool(tool_name, tool_args)
 
+            if round_log is not None:
+                round_log["tool_calls"].append({
+                    "name": tool_name,
+                    "args": tool_args,
+                    "result": result,
+                })
+
             tool_results.append({
                 "type": "tool_result",
                 "tool_use_id": tool_id,
                 "content": json.dumps(result),
             })
+
+        if session is not None and round_log is not None:
+            session["rounds"].append(round_log)
 
         # Append tool results as a user message (never append empty content: [])
         if tool_results:
@@ -613,10 +671,11 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
 # ---------------------------------------------------------------------------
 
 def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
-                      status_cb) -> str:
+                      status_cb, session: dict = None) -> str:
     """Run the Ollama chat loop with tool calling."""
     host = getattr(prefs, 'ollama_host', 'http://localhost:11434').rstrip("/")
     url = f"{host}/api/chat"
+    model_id = prefs.get_selected_model_id()
 
     allow_python_eval = getattr(prefs, 'allow_python_eval', False)
     enable_web_search = getattr(prefs, 'enable_web_search', True)
@@ -629,7 +688,7 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
 
     for round_num in range(MAX_TOOL_ROUNDS):
         body = json.dumps({
-            "model": prefs.get_selected_model_id(),
+            "model": model_id,
             "messages": messages,
             "tools": tools,
             "stream": False,
@@ -666,6 +725,8 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
         messages.append(msg)
 
         # Execute each tool call
+        round_log = {"round": round_num + 1, "tool_calls": []} if session is not None else None
+
         for tc in tool_calls:
             func = tc.get("function", {})
             tool_name = func.get("name", "")
@@ -682,11 +743,21 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
 
             result = execute_tool(tool_name, tool_args)
 
+            if round_log is not None:
+                round_log["tool_calls"].append({
+                    "name": tool_name,
+                    "args": tool_args,
+                    "result": result,
+                })
+
             # Append tool response
             messages.append({
                 "role": "tool",
                 "content": json.dumps(result),
             })
+
+        if session is not None and round_log is not None:
+            session["rounds"].append(round_log)
 
     # Graceful synthesis fallback: force final text response without tools
     try:
@@ -696,7 +767,7 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
             "content": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
         })
         body = json.dumps({
-            "model": model,
+            "model": model_id,
             "messages": messages,
             "stream": False,
         }).encode()
