@@ -122,6 +122,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             _last_companion_ping = time.time()
             try:
                 scene = getattr(bpy.context, "scene", None)
+                wm = getattr(bpy.context, "window_manager", None)
                 act_obj = getattr(bpy.context, "active_object", None)
                 mode = getattr(bpy.context, "mode", "OBJECT")
 
@@ -132,16 +133,21 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 status_msg = ""
                 youtube_query = ""
 
-                if scene:
-                    current_step = getattr(scene, "bm_current_step", 0)
-                    is_processing = getattr(scene, "bm_is_processing", False)
-                    status_msg = getattr(scene, "bm_status_message", "")
-                    youtube_query = getattr(scene, "bm_youtube_query", "")
+                # Prioritize WindowManager for session steps/chat as it is immune to undo/redo wipes
+                source = wm if (wm and hasattr(wm, "bm_steps") and len(wm.bm_steps) > 0) else scene
 
-                    for msg in scene.bm_chat_history:
-                        chat_data.append({"text": msg.text, "is_user": msg.is_user})
+                if source:
+                    current_step = getattr(source, "bm_current_step", 0)
+                    is_processing = getattr(source, "bm_is_processing", False)
+                    status_msg = getattr(source, "bm_status_message", "")
+                    youtube_query = getattr(source, "bm_youtube_query", "")
 
-                    for s in scene.bm_steps:
+                    chat_source = wm if (wm and hasattr(wm, "bm_chat_history") and len(wm.bm_chat_history) > 0) else scene
+                    if chat_source:
+                        for msg in chat_source.bm_chat_history:
+                            chat_data.append({"text": msg.text, "is_user": msg.is_user})
+
+                    for s in source.bm_steps:
                         hl = None
                         if s.highlight_json:
                             try:
@@ -156,10 +162,11 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                             "highlight": hl,
                         })
 
-                followup_step = getattr(scene, "bm_followup_step", -1) if scene else -1
-                remote_mic_active = getattr(scene, "bm_remote_mic_active", False) if scene else False
-                remote_mic_send = getattr(scene, "bm_remote_mic_send", False) if scene else False
-                remote_mic_abort = getattr(scene, "bm_remote_mic_abort", False) if scene else False
+                ctrl_source = wm if (wm and hasattr(wm, "bm_remote_mic_active")) else scene
+                followup_step = getattr(ctrl_source, "bm_followup_step", -1) if ctrl_source else -1
+                remote_mic_active = getattr(ctrl_source, "bm_remote_mic_active", False) if ctrl_source else False
+                remote_mic_send = getattr(ctrl_source, "bm_remote_mic_send", False) if ctrl_source else False
+                remote_mic_abort = getattr(ctrl_source, "bm_remote_mic_abort", False) if ctrl_source else False
 
                 data = {
                     "active_object": act_obj.name if act_obj else None,
@@ -316,6 +323,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     scene.bm_input_text = ""
                 elif action == "cancel":
                     scene.bm_followup_step = -1
+                from .state.conversation import sync_scene_to_wm
+                sync_scene_to_wm(scene)
                 return None
 
             bpy.app.timers.register(_schedule_followup, first_interval=0.001)
@@ -348,6 +357,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 scene = getattr(bpy.context, "scene", None)
                 if scene:
                     scene.bm_remote_mic_send = False
+                    from .state.conversation import sync_scene_to_wm
+                    sync_scene_to_wm(scene)
                 return None
             bpy.app.timers.register(_reset_remote_send, first_interval=0.001)
             self.send_response(200)
@@ -363,6 +374,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 if scene:
                     scene.bm_remote_mic_abort = False
                     scene.bm_remote_mic_active = False
+                    from .state.conversation import sync_scene_to_wm
+                    sync_scene_to_wm(scene)
                 return None
             bpy.app.timers.register(_reset_remote_abort, first_interval=0.001)
             self.send_response(200)
@@ -379,6 +392,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     scene.bm_remote_mic_active = False
                     scene.bm_remote_mic_send = False
                     scene.bm_remote_mic_abort = False
+                    from .state.conversation import sync_scene_to_wm
+                    sync_scene_to_wm(scene)
                     for window in bpy.context.window_manager.windows:
                         for area in window.screen.areas:
                             area.tag_redraw()

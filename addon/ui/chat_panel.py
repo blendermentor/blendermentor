@@ -26,6 +26,7 @@ def get_mic_icon_id(active: bool = False):
 
 from ..ai_client import ask_ai
 from ..scene_reader import get_basic_context_json, get_scene_context
+from ..state.conversation import sync_scene_to_wm, sync_wm_to_scene
 from ..logger import (
     get_log_filepath,
     get_last_exchange,
@@ -326,10 +327,14 @@ def _apply_ai_response(scene, response: dict):
         for window in bpy.context.window_manager.windows:
             for area in window.screen.areas:
                 area.tag_redraw()
+
+        # Mirror state to WindowManager so it survives scene undo/redo resets
+        sync_scene_to_wm(scene)
     else:
         reply = scene.bm_chat_history.add()
         reply.text = "The AI did not return any steps. Please try again."
         reply.is_user = False
+        sync_scene_to_wm(scene)
 
 
 class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
@@ -461,6 +466,7 @@ class BLENDERMENTOR_OT_clear_chat(bpy.types.Operator):
         scene.bm_status_message = ""
         scene.bm_is_processing = False
         clear_all_highlights()
+        sync_scene_to_wm(scene)
         return {'FINISHED'}
 
 
@@ -589,6 +595,7 @@ class BLENDERMENTOR_OT_step_next(bpy.types.Operator):
             for area in window.screen.areas:
                 area.tag_redraw()
 
+        sync_scene_to_wm(scene)
         return {'FINISHED'}
 
 
@@ -608,6 +615,7 @@ class BLENDERMENTOR_OT_step_prev(bpy.types.Operator):
             for area in window.screen.areas:
                 area.tag_redraw()
 
+        sync_scene_to_wm(scene)
         return {'FINISHED'}
 
 
@@ -626,6 +634,7 @@ class BLENDERMENTOR_OT_step_goto(bpy.types.Operator):
             for window in bpy.context.window_manager.windows:
                 for area in window.screen.areas:
                     area.tag_redraw()
+            sync_scene_to_wm(scene)
         return {'FINISHED'}
 
 # ---------------------------------------------------------------------------
@@ -779,6 +788,7 @@ class BLENDERMENTOR_OT_load_mock_steps(bpy.types.Operator):
         if mock[0].get("highlight"):
             trigger_highlight(mock[0]["highlight"])
 
+        sync_scene_to_wm(scene)
         self.report({'INFO'}, f"Loaded {len(mock)} mock steps.")
         return {'FINISHED'}
 
