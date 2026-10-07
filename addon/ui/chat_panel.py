@@ -57,7 +57,10 @@ def _status_callback(message: str):
     """
     def _set():
         try:
-            bpy.context.scene.bm_status_message = message
+            if hasattr(bpy.context, "scene") and bpy.context.scene:
+                bpy.context.scene.bm_status_message = message
+            if hasattr(bpy.context, "window_manager") and bpy.context.window_manager:
+                bpy.context.window_manager.bm_status_message = message
             # Tag areas so the panel redraws with the new status
             for area in bpy.context.screen.areas:
                 area.tag_redraw()
@@ -111,10 +114,12 @@ def _poll_worker_done():
         reply = scene.bm_chat_history.add()
         reply.text = f"❌ Error: {str(result)}"
         reply.is_user = False
+        sync_scene_to_wm(scene)
     else:
         _apply_ai_response(scene, result)
 
     scene.bm_followup_step = -1
+    sync_scene_to_wm(scene)
 
     # In developer mode, mirror exchange into Blender Text Editor
     try:
@@ -434,6 +439,12 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         # Mark processing state
         scene.bm_is_processing = True
         scene.bm_status_message = "Thinking..."
+
+        # Immediately mirror new user chat message and processing state to WindowManager
+        # This guarantees:
+        # 1. /api/state immediately serves the new user question to the browser companion.
+        # 2. Scene undo/redo resets don't prematurely wipe bm_is_processing back to False.
+        sync_scene_to_wm(scene)
 
         with _worker_lock:
             _worker_result = None

@@ -124,8 +124,20 @@ def sync_wm_to_scene(scene=None):
         scene.bm_current_step = wm.bm_current_step
         scene.bm_followup_step = wm.bm_followup_step
         scene.bm_last_ai_response = wm.bm_last_ai_response
-        scene.bm_status_message = wm.bm_status_message
-        scene.bm_is_processing = wm.bm_is_processing
+
+        # Protect live thinking state: if either Scene or WM is currently processing, keep processing True!
+        if wm.bm_is_processing or scene.bm_is_processing:
+            active_processing = True
+            active_status = wm.bm_status_message or scene.bm_status_message or "Thinking..."
+        else:
+            active_processing = False
+            active_status = ""
+
+        scene.bm_is_processing = active_processing
+        wm.bm_is_processing = active_processing
+        scene.bm_status_message = active_status
+        wm.bm_status_message = active_status
+
         scene.bm_youtube_query = wm.bm_youtube_query
         scene.bm_remote_mic_active = wm.bm_remote_mic_active
         scene.bm_remote_mic_send = wm.bm_remote_mic_send

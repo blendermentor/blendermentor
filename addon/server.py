@@ -133,19 +133,34 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 status_msg = ""
                 youtube_query = ""
 
-                # Prioritize WindowManager for session steps/chat as it is immune to undo/redo wipes
+                # Pick whichever source has the most up-to-date chat history
+                wm_chat_len = len(wm.bm_chat_history) if (wm and hasattr(wm, "bm_chat_history")) else 0
+                sc_chat_len = len(scene.bm_chat_history) if (scene and hasattr(scene, "bm_chat_history")) else 0
+                chat_source = scene if (sc_chat_len > wm_chat_len) else (wm if wm_chat_len > 0 else scene)
+
+                if chat_source:
+                    for msg in chat_source.bm_chat_history:
+                        chat_data.append({"text": msg.text, "is_user": msg.is_user})
+
+                # Check processing state across both Scene and WindowManager so status is never missed
+                is_processing = False
+                if scene and getattr(scene, "bm_is_processing", False):
+                    is_processing = True
+                elif wm and getattr(wm, "bm_is_processing", False):
+                    is_processing = True
+
+                status_msg = ""
+                if scene and getattr(scene, "bm_status_message", ""):
+                    status_msg = scene.bm_status_message
+                elif wm and getattr(wm, "bm_status_message", ""):
+                    status_msg = wm.bm_status_message
+
+                # Prioritize WindowManager for session steps as it is immune to undo/redo wipes
                 source = wm if (wm and hasattr(wm, "bm_steps") and len(wm.bm_steps) > 0) else scene
 
                 if source:
                     current_step = getattr(source, "bm_current_step", 0)
-                    is_processing = getattr(source, "bm_is_processing", False)
-                    status_msg = getattr(source, "bm_status_message", "")
                     youtube_query = getattr(source, "bm_youtube_query", "")
-
-                    chat_source = wm if (wm and hasattr(wm, "bm_chat_history") and len(wm.bm_chat_history) > 0) else scene
-                    if chat_source:
-                        for msg in chat_source.bm_chat_history:
-                            chat_data.append({"text": msg.text, "is_user": msg.is_user})
 
                     for s in source.bm_steps:
                         hl = None
