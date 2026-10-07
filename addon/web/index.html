@@ -1341,8 +1341,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         const data = await res.json();
         updateUI(data);
         statusDot.classList.remove("disconnected");
-        const objDesc = data.active_object ? `${data.active_object} (${data.mode})` : `No Selection (${data.mode})`;
-        sceneStatus.textContent = `Connected: ${objDesc}`;
+        sceneStatus.textContent = "Connected to Blender";
       } catch (err) {
         statusDot.classList.add("disconnected");
         sceneStatus.textContent = "Disconnected from Blender";

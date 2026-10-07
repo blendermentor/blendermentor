@@ -1077,7 +1077,19 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                 layout.separator(factor=0.3)
 
         # -------------------------------------------------------------
-        # 2. Step Navigator & Remote Controls (Only when steps exist)
+        # 3. Live status indicator (Thinking...)
+        # Displayed right below the text box area, above the active card
+        # -------------------------------------------------------------
+        if scene.bm_is_processing:
+            status_box = layout.box()
+            status_row = status_box.row(align=True)
+            status_row.alert = True
+            status_msg = scene.bm_status_message or "Thinking..."
+            status_row.label(text=f"⏳ {status_msg}", icon='SORTTIME')
+            layout.separator(factor=0.3)
+
+        # -------------------------------------------------------------
+        # 4. Step Navigator & Remote Controls (Only when steps exist)
         # -------------------------------------------------------------
         if total > 0 and 0 <= current < total:
             nav_box = layout.box()
@@ -1121,7 +1133,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                 yt_op.query = scene.bm_youtube_query
 
             # -------------------------------------------------------------
-            # 3. Active Step Card (Instruction & Context Reasoning)
+            # 5. Active Step Card (Instruction & Context Reasoning)
             # -------------------------------------------------------------
             step = steps[current]
             card = layout.box()
@@ -1154,17 +1166,6 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                         fin_col.label(text=fl, icon='CHECKMARK')
                     else:
                         fin_col.label(text=f"  {fl}")
-
-
-        # -------------------------------------------------------------
-        # 4. Live status indicator (Thinking...)
-        # -------------------------------------------------------------
-        if scene.bm_is_processing:
-            status_box = layout.box()
-            status_row = status_box.row(align=True)
-            status_row.alert = True
-            status_msg = scene.bm_status_message or "Thinking..."
-            status_row.label(text=f"⏳ {status_msg}", icon='SORTTIME')
 
         # -------------------------------------------------------------
         # 5. Follow-up banner (if active)
