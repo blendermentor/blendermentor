@@ -59,13 +59,18 @@ def _status_callback(message: str):
         try:
             if hasattr(bpy.context, "scene") and bpy.context.scene:
                 bpy.context.scene.bm_status_message = message
+                bpy.context.scene.bm_is_processing = True
             wm = getattr(bpy.context, "window_manager", None)
             if wm:
                 wm.bm_status_message = message
+                wm.bm_is_processing = True
                 for win in wm.windows:
                     for area in win.screen.areas:
                         if area.type == 'VIEW_3D':
                             area.tag_redraw()
+                            for r in area.regions:
+                                if r.type == 'UI':
+                                    r.tag_redraw()
         except Exception:
             pass
         return None
@@ -104,7 +109,7 @@ def _poll_worker_done():
         result = _worker_result
 
     if result is None:
-        # Still working — keep tagging 3D Viewport areas for redraw so Thinking indicator persists live
+        # Still working — keep tagging 3D Viewport areas and UI sidebar regions for redraw so Thinking indicator persists live
         try:
             wm = getattr(bpy.context, "window_manager", None)
             if wm:
@@ -112,6 +117,9 @@ def _poll_worker_done():
                     for area in win.screen.areas:
                         if area.type == 'VIEW_3D':
                             area.tag_redraw()
+                            for r in area.regions:
+                                if r.type == 'UI':
+                                    r.tag_redraw()
         except Exception:
             pass
         return 0.15
@@ -156,6 +164,9 @@ def _poll_worker_done():
             for win in wm.windows:
                 for area in win.screen.areas:
                     area.tag_redraw()
+                    for r in area.regions:
+                        if r.type == 'UI':
+                            r.tag_redraw()
     except Exception:
         pass
 
@@ -471,13 +482,16 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         # Mirror state to WindowManager so /api/state gets it instantly
         sync_scene_to_wm(scene)
 
-        # Immediately tag all View3D areas to draw the status indicator
+        # Immediately tag all View3D areas and UI regions to draw the status indicator
         try:
             if wm:
                 for win in wm.windows:
                     for area in win.screen.areas:
                         if area.type == 'VIEW_3D':
                             area.tag_redraw()
+                            for r in area.regions:
+                                if r.type == 'UI':
+                                    r.tag_redraw()
         except Exception:
             pass
 
@@ -1132,9 +1146,16 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         # -------------------------------------------------------------
         if is_processing:
             status_box = layout.box()
-            status_row = status_box.row(align=True)
-            status_row.alert = True
-            status_row.label(text=f"⏳ {status_msg}", icon='SORTTIME')
+            status_col = status_box.column(align=True)
+            status_col.scale_y = 1.05
+            msg_lines = textwrap.wrap(status_msg, width=max(18, char_width - 4))
+            for i, line in enumerate(msg_lines):
+                row = status_col.row(align=True)
+                row.alert = True
+                if i == 0:
+                    row.label(text=line, icon='TIME')
+                else:
+                    row.label(text=f"  {line}")
             layout.separator(factor=0.3)
 
         # -------------------------------------------------------------
