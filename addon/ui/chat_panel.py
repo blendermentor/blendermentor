@@ -59,11 +59,13 @@ def _status_callback(message: str):
         try:
             if hasattr(bpy.context, "scene") and bpy.context.scene:
                 bpy.context.scene.bm_status_message = message
-            if hasattr(bpy.context, "window_manager") and bpy.context.window_manager:
-                bpy.context.window_manager.bm_status_message = message
-            # Tag areas so the panel redraws with the new status
-            for area in bpy.context.screen.areas:
-                area.tag_redraw()
+            wm = getattr(bpy.context, "window_manager", None)
+            if wm:
+                wm.bm_status_message = message
+                for win in wm.windows:
+                    for area in win.screen.areas:
+                        if area.type == 'VIEW_3D':
+                            area.tag_redraw()
         except Exception:
             pass
         return None
@@ -102,13 +104,26 @@ def _poll_worker_done():
         result = _worker_result
 
     if result is None:
-        # Still working — check again soon
+        # Still working — keep tagging 3D Viewport areas for redraw so Thinking indicator persists live
+        try:
+            wm = getattr(bpy.context, "window_manager", None)
+            if wm:
+                for win in wm.windows:
+                    for area in win.screen.areas:
+                        if area.type == 'VIEW_3D':
+                            area.tag_redraw()
+        except Exception:
+            pass
         return 0.15
 
     # Work is done — process the result on the main thread
     scene = bpy.context.scene
     scene.bm_is_processing = False
     scene.bm_status_message = ""
+    wm = getattr(bpy.context, "window_manager", None)
+    if wm:
+        wm.bm_is_processing = False
+        wm.bm_status_message = ""
 
     if isinstance(result, Exception):
         reply = scene.bm_chat_history.add()
@@ -134,10 +149,13 @@ def _poll_worker_done():
         _worker_result = None
     _worker_thread = None
 
-    # Redraw
+    # Redraw all areas across all windows
     try:
-        for area in bpy.context.screen.areas:
-            area.tag_redraw()
+        wm = getattr(bpy.context, "window_manager", None)
+        if wm:
+            for win in wm.windows:
+                for area in win.screen.areas:
+                    area.tag_redraw()
     except Exception:
         pass
 
@@ -356,7 +374,8 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
             return {'CANCELLED'}
 
         # Don't allow sending while already processing
-        if scene.bm_is_processing:
+        wm = getattr(bpy.context, "window_manager", None)
+        if scene.bm_is_processing or (wm and getattr(wm, "bm_is_processing", False)):
             self.report({'WARNING'}, "Still processing — please wait.")
             return {'CANCELLED'}
 
@@ -373,6 +392,9 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         msg.is_user = True
         scene.bm_input_text = ""
 
+        # Immediately mirror new user chat message to WindowManager
+        sync_scene_to_wm(scene)
+
         # Dev mode: handle test commands
         addon_prefs = context.preferences.addons.get(__package__.rpartition('.')[0])
         if addon_prefs and addon_prefs.preferences.developer_mode:
@@ -388,6 +410,7 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
             reply.text = "✨ Blinking the 3D Viewport!"
             reply.is_user = False
             scene.bm_followup_step = -1
+            sync_scene_to_wm(scene)
             return {'FINISHED'}
 
         # Get AI preferences
@@ -396,6 +419,7 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
             reply.text = "⚠ Please configure BlenderMentor in Edit → Preferences → Add-ons."
             reply.is_user = False
             scene.bm_followup_step = -1
+            sync_scene_to_wm(scene)
             return {'FINISHED'}
 
         prefs = addon_prefs.preferences
@@ -404,6 +428,7 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
             reply.text = "⚠ No API key set. Go to Edit → Preferences → Add-ons → BlenderMentor."
             reply.is_user = False
             scene.bm_followup_step = -1
+            sync_scene_to_wm(scene)
             return {'FINISHED'}
 
         # --- Launch background AI call ---
@@ -436,15 +461,25 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
             "developer_mode": getattr(prefs, 'developer_mode', False),
         }
 
-        # Mark processing state
+        # Mark processing state on both Scene and WindowManager
         scene.bm_is_processing = True
         scene.bm_status_message = "Thinking..."
+        if wm:
+            wm.bm_is_processing = True
+            wm.bm_status_message = "Thinking..."
 
-        # Immediately mirror new user chat message and processing state to WindowManager
-        # This guarantees:
-        # 1. /api/state immediately serves the new user question to the browser companion.
-        # 2. Scene undo/redo resets don't prematurely wipe bm_is_processing back to False.
+        # Mirror state to WindowManager so /api/state gets it instantly
         sync_scene_to_wm(scene)
+
+        # Immediately tag all View3D areas to draw the status indicator
+        try:
+            if wm:
+                for win in wm.windows:
+                    for area in win.screen.areas:
+                        if area.type == 'VIEW_3D':
+                            area.tag_redraw()
+        except Exception:
+            pass
 
         with _worker_lock:
             _worker_result = None
@@ -457,7 +492,7 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         _worker_thread.start()
 
         # Register a timer to poll for completion
-        bpy.app.timers.register(_poll_worker_done, first_interval=0.2)
+        bpy.app.timers.register(_poll_worker_done, first_interval=0.15)
 
         return {'FINISHED'}
 
@@ -1070,8 +1105,12 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         input_sub.prop(scene, "bm_input_text", text="")
         send_sub = input_sub.row(align=True)
         send_sub.scale_x = 1.2
+        wm = context.window_manager
+        is_processing = getattr(scene, "bm_is_processing", False) or (wm and getattr(wm, "bm_is_processing", False))
+        status_msg = getattr(scene, "bm_status_message", "") or (wm and getattr(wm, "bm_status_message", "")) or "Thinking..."
+
         send_btn = send_sub.operator("blendermentor.send_message", text="", icon='PLAY')
-        if scene.bm_is_processing:
+        if is_processing:
             send_btn.enabled = False
         layout.separator(factor=0.3)
 
@@ -1091,11 +1130,10 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         # 3. Live status indicator (Thinking...)
         # Displayed right below the text box area, above the active card
         # -------------------------------------------------------------
-        if scene.bm_is_processing:
+        if is_processing:
             status_box = layout.box()
             status_row = status_box.row(align=True)
             status_row.alert = True
-            status_msg = scene.bm_status_message or "Thinking..."
             status_row.label(text=f"⏳ {status_msg}", icon='SORTTIME')
             layout.separator(factor=0.3)
 

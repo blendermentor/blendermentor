@@ -180,11 +180,17 @@ def on_message_update(self, context):
         return
     if not self.bm_input_text.strip():
         return
+    wm = getattr(bpy.context, "window_manager", None)
+    if getattr(self, "bm_is_processing", False) or (wm and getattr(wm, "bm_is_processing", False)):
+        return
 
     # Schedule the operator execution to avoid context lock during property update
     def run_op():
         scene = getattr(bpy.context, "scene", None)
         if not scene:
+            return None
+        wm = getattr(bpy.context, "window_manager", None)
+        if getattr(scene, "bm_is_processing", False) or (wm and getattr(wm, "bm_is_processing", False)):
             return None
         if getattr(scene, "bm_remote_mic_active", False):
             return None

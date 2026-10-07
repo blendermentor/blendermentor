@@ -1415,7 +1415,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       }
 
       // 2. Chat history sync
-      if (data.chat_history && data.chat_history.length !== appState.chat_history.length) {
+      const chatChanged = !appState.chat_history || JSON.stringify(data.chat_history) !== JSON.stringify(appState.chat_history);
+      if (data.chat_history && chatChanged) {
         renderChat(data.chat_history);
       }
 
