@@ -121,8 +121,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             global _last_companion_ping
             _last_companion_ping = time.time()
             try:
-                scene = getattr(bpy.context, "scene", None)
-                wm = getattr(bpy.context, "window_manager", None)
+                scene = getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
+                wm = getattr(bpy.context, "window_manager", None) or (bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None)
                 act_obj = getattr(bpy.context, "active_object", None)
                 mode = getattr(bpy.context, "mode", "OBJECT")
 
@@ -133,20 +133,18 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 status_msg = ""
                 youtube_query = ""
 
-                # Pick whichever source has the most up-to-date chat history
-                wm_chat_len = len(wm.bm_chat_history) if (wm and hasattr(wm, "bm_chat_history")) else 0
-                sc_chat_len = len(scene.bm_chat_history) if (scene and hasattr(scene, "bm_chat_history")) else 0
-                chat_source = scene if (sc_chat_len > wm_chat_len) else (wm if wm_chat_len > 0 else scene)
+                # Pick whichever source has the most up-to-date chat history (prefer scene if populated)
+                chat_source = scene if (scene and len(scene.bm_chat_history) > 0) else (wm if (wm and len(wm.bm_chat_history) > 0) else scene)
 
                 if chat_source:
                     for msg in chat_source.bm_chat_history:
                         chat_data.append({"text": msg.text, "is_user": msg.is_user})
 
-                # Check processing state across both Scene and WindowManager so status is never missed
+                # Check processing state across Scene, WindowManager, and background AI worker thread
+                from .ui.chat_panel import _worker_thread
+                thread_alive = (_worker_thread is not None and _worker_thread.is_alive())
                 is_processing = False
-                if scene and getattr(scene, "bm_is_processing", False):
-                    is_processing = True
-                elif wm and getattr(wm, "bm_is_processing", False):
+                if (scene and getattr(scene, "bm_is_processing", False)) or (wm and getattr(wm, "bm_is_processing", False)) or thread_alive:
                     is_processing = True
 
                 status_msg = ""
@@ -154,6 +152,8 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     status_msg = scene.bm_status_message
                 elif wm and getattr(wm, "bm_status_message", ""):
                     status_msg = wm.bm_status_message
+                if is_processing and not status_msg:
+                    status_msg = "Thinking..."
 
                 # Prioritize WindowManager for session steps as it is immune to undo/redo wipes
                 source = wm if (wm and hasattr(wm, "bm_steps") and len(wm.bm_steps) > 0) else scene
@@ -182,12 +182,14 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 remote_mic_active = getattr(ctrl_source, "bm_remote_mic_active", False) if ctrl_source else False
                 remote_mic_send = getattr(ctrl_source, "bm_remote_mic_send", False) if ctrl_source else False
                 remote_mic_abort = getattr(ctrl_source, "bm_remote_mic_abort", False) if ctrl_source else False
+                input_text_val = getattr(scene, "bm_input_text", "") if scene else ""
 
                 data = {
                     "active_object": act_obj.name if act_obj else None,
                     "active_object_type": act_obj.type if act_obj else None,
                     "mode": mode,
                     "chat_history": chat_data,
+                    "input_text": input_text_val,
                     "steps": steps_data,
                     "current_step": current_step,
                     "followup_step": followup_step,

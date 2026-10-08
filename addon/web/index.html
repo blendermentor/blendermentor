@@ -1464,6 +1464,14 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         }
       }
 
+      // 6. Text input sync from Blender N-panel (if user is not actively typing in browser)
+      if (data.input_text !== undefined && document.activeElement !== chatInput) {
+        if (chatInput.value !== data.input_text) {
+          chatInput.value = data.input_text;
+          autoResizeInput();
+        }
+      }
+
       appState = data;
       isInitialLoad = false;
     }

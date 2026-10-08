@@ -237,8 +237,15 @@ def get_object_details(object_name: str) -> dict:
 
 def get_selection_info() -> dict:
     """Return info about the current selection (all selected objects)."""
-    selected = bpy.context.selected_objects
-    active = bpy.context.active_object
+    selected = getattr(bpy.context, "selected_objects", None)
+    if selected is None:
+        scene = getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
+        selected = [o for o in getattr(scene, "objects", []) if getattr(o, "select_get", lambda: False)()]
+    active = getattr(bpy.context, "active_object", None)
+    if active is None:
+        scene = getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
+        vl = getattr(scene, "view_layers", [None])[0] if (scene and hasattr(scene, "view_layers") and len(scene.view_layers) > 0) else None
+        active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
 
     result = {
         "active_object": active.name if active else None,
