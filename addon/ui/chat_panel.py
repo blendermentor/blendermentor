@@ -24,6 +24,12 @@ def get_mic_icon_id(active: bool = False):
         return pcoll[key].icon_id
     return 0
 
+def get_thinking_icon_id():
+    pcoll = _preview_collections.get("main")
+    if pcoll and "thinking" in pcoll:
+        return pcoll["thinking"].icon_id
+    return 0
+
 from ..ai_client import ask_ai
 from ..scene_reader import get_basic_context_json, get_scene_context
 from ..state.conversation import sync_scene_to_wm, sync_wm_to_scene
@@ -49,18 +55,42 @@ _worker_result = None   # dict | Exception | None
 _worker_lock = threading.Lock()
 
 
-def _status_callback(message: str):
-    """Called from the worker thread to update the status message.
+def _redraw_chat_panel():
+    """Trigger redraw on 3D Viewport sidebar so the status animation updates live."""
+    try:
+        wm = getattr(bpy.context, "window_manager", None) or (
+            bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None
+        )
+        if not wm:
+            return
+        for win in wm.windows:
+            screen = getattr(win, "screen", None)
+            if screen:
+                for area in screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+                        for region in area.regions:
+                            if region.type == 'UI':
+                                region.tag_redraw()
+    except Exception:
+        pass
 
-    We use bpy.app.timers because bpy property writes from a
-    non-main thread are unsafe.
-    """
+
+def _status_callback(message: str):
+    """Called from the worker thread to update the status message."""
     def _set():
         try:
-            bpy.context.scene.bm_status_message = message
-            # Tag areas so the panel redraws with the new status
-            for area in bpy.context.screen.areas:
-                area.tag_redraw()
+            scene = getattr(bpy.context, "scene", None) or (
+                bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None
+            )
+            wm = getattr(bpy.context, "window_manager", None) or (
+                bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None
+            )
+            if scene:
+                scene.bm_status_message = message
+            if wm:
+                wm.bm_status_message = message
+            _redraw_chat_panel()
         except Exception:
             pass
         return None
@@ -91,30 +121,66 @@ def _ai_worker(prefs_snapshot: dict, basic_ctx: str, prompt: str):
             _worker_result = e
 
 
+_thinking_animation_cycle = ["Thinking.", "Thinking..", "Thinking...", "Thinking...."]
+_thinking_frame = 0
+
+
 def _poll_worker_done():
     """Timer callback — checks if the background AI call has finished."""
-    global _worker_result, _worker_thread
+    global _worker_result, _worker_thread, _thinking_frame
 
     with _worker_lock:
         result = _worker_result
 
     if result is None:
-        # Still working — check again soon
-        return 0.15
+        # Still working — animate the thinking status and tag redraw
+        try:
+            scene = getattr(bpy.context, "scene", None) or (
+                bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None
+            )
+            wm = getattr(bpy.context, "window_manager", None) or (
+                bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None
+            )
+            is_proc = (scene and scene.bm_is_processing) or (wm and wm.bm_is_processing)
+            if is_proc:
+                current_status = getattr(scene, "bm_status_message", "") if scene else getattr(wm, "bm_status_message", "")
+                if not current_status or current_status.startswith("Thinking"):
+                    next_status = _thinking_animation_cycle[_thinking_frame % len(_thinking_animation_cycle)]
+                    _thinking_frame += 1
+                    if scene:
+                        scene.bm_status_message = next_status
+                    if wm:
+                        wm.bm_status_message = next_status
+            _redraw_chat_panel()
+        except Exception:
+            pass
+        return 0.25
 
     # Work is done — process the result on the main thread
-    scene = bpy.context.scene
-    scene.bm_is_processing = False
-    scene.bm_status_message = ""
+    scene = getattr(bpy.context, "scene", None) or (
+        bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None
+    )
+    wm = getattr(bpy.context, "window_manager", None) or (
+        bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None
+    )
+    if scene:
+        scene.bm_is_processing = False
+        scene.bm_status_message = ""
+    if wm:
+        wm.bm_is_processing = False
+        wm.bm_status_message = ""
 
     if isinstance(result, Exception):
-        reply = scene.bm_chat_history.add()
-        reply.text = f"❌ Error: {str(result)}"
-        reply.is_user = False
+        if scene:
+            reply = scene.bm_chat_history.add()
+            reply.text = f"❌ Error: {str(result)}"
+            reply.is_user = False
     else:
-        _apply_ai_response(scene, result)
+        if scene:
+            _apply_ai_response(scene, result)
 
-    scene.bm_followup_step = -1
+    if scene:
+        scene.bm_followup_step = -1
 
     # In developer mode, mirror exchange into Blender Text Editor
     try:
@@ -129,13 +195,7 @@ def _poll_worker_done():
         _worker_result = None
     _worker_thread = None
 
-    # Redraw
-    try:
-        for area in bpy.context.screen.areas:
-            area.tag_redraw()
-    except Exception:
-        pass
-
+    _redraw_chat_panel()
     return None  # unregister timer
 
 
@@ -432,8 +492,14 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         }
 
         # Mark processing state
+        global _thinking_frame
+        _thinking_frame = 0
         scene.bm_is_processing = True
-        scene.bm_status_message = "Thinking..."
+        scene.bm_status_message = "Thinking."
+        wm = getattr(context, "window_manager", None)
+        if wm:
+            wm.bm_is_processing = True
+            wm.bm_status_message = "Thinking."
 
         with _worker_lock:
             _worker_result = None
@@ -445,8 +511,11 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         )
         _worker_thread.start()
 
-        # Register a timer to poll for completion
-        bpy.app.timers.register(_poll_worker_done, first_interval=0.2)
+        # Tag immediate redraw so the status displays instantly
+        _redraw_chat_panel()
+
+        # Register a timer to animate and poll for completion
+        bpy.app.timers.register(_poll_worker_done, first_interval=0.25)
 
         return {'FINISHED'}
 
@@ -509,13 +578,22 @@ class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
         from ..server import is_companion_connected
 
         scene = context.scene
+        wm = getattr(context, "window_manager", None)
+
+        def _set_mic_state(active=False, send=False, abort=False):
+            scene.bm_remote_mic_active = active
+            scene.bm_remote_mic_send = send
+            scene.bm_remote_mic_abort = abort
+            if wm:
+                wm.bm_remote_mic_active = active
+                wm.bm_remote_mic_send = send
+                wm.bm_remote_mic_abort = abort
 
         # 1. If companion browser is not connected, open it automatically and activate mic
         if not is_companion_connected(timeout=4.0):
             url = "http://127.0.0.1:8765"
             webbrowser.open(url)
-            scene.bm_remote_mic_active = True
-            scene.bm_remote_mic_send = False
+            _set_mic_state(active=True, send=False, abort=False)
             self.report({'INFO'}, "Opening Browser Companion for voice dictation...")
             for window in context.window_manager.windows:
                 for area in window.screen.areas:
@@ -523,18 +601,16 @@ class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
             return {'FINISHED'}
 
         # 2. If already listening, stop and send
-        if scene.bm_remote_mic_active:
-            scene.bm_remote_mic_active = False
-            scene.bm_remote_mic_send = True
+        is_active = bool(scene.bm_remote_mic_active or (wm and wm.bm_remote_mic_active))
+        if is_active:
+            _set_mic_state(active=False, send=True, abort=False)
             for window in context.window_manager.windows:
                 for area in window.screen.areas:
                     area.tag_redraw()
             return {'FINISHED'}
 
         # 3. Turn on dictation in browser
-        scene.bm_remote_mic_active = True
-        scene.bm_remote_mic_send = False
-        scene.bm_remote_mic_abort = False
+        _set_mic_state(active=True, send=False, abort=False)
         for window in context.window_manager.windows:
             for area in window.screen.areas:
                 area.tag_redraw()
@@ -549,17 +625,28 @@ class BLENDERMENTOR_OT_mic_abort(bpy.types.Operator):
 
     def execute(self, context):
         scene = context.scene
+        wm = getattr(context, "window_manager", None)
 
-        if scene.bm_remote_mic_active:
+        def _set_mic_state(active=False, send=False, abort=False):
+            scene.bm_remote_mic_active = active
+            scene.bm_remote_mic_send = send
+            scene.bm_remote_mic_abort = abort
+            if wm:
+                wm.bm_remote_mic_active = active
+                wm.bm_remote_mic_send = send
+                wm.bm_remote_mic_abort = abort
+
+        is_active = bool(scene.bm_remote_mic_active or (wm and wm.bm_remote_mic_active))
+        if is_active:
             # Active dictation -> stop listening without sending (speech stays in input box for editing!)
-            scene.bm_remote_mic_active = False
-            scene.bm_remote_mic_send = False
-            scene.bm_remote_mic_abort = True
+            _set_mic_state(active=False, send=False, abort=True)
             self.report({'INFO'}, "Dictation stopped. Speech kept in text box for editing.")
         else:
             # Already stopped -> clear input text box
-            scene.bm_remote_mic_abort = True
+            _set_mic_state(active=False, send=False, abort=True)
             scene.bm_input_text = ""
+            if wm:
+                wm.bm_input_text = ""
             self.report({'INFO'}, "Cleared input text.")
 
         for window in context.window_manager.windows:
@@ -1054,19 +1141,36 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             mic_icon = 'REC' if scene.bm_remote_mic_active else 'SOUND'
             mic_col.operator("blendermentor.hybrid_mic", text="", icon=mic_icon)
 
-        # 2. Text input field & Send button (connected together)
+        # 2. Text input field & Send button (or Thinking status when busy)
+        wm = getattr(context, "window_manager", None)
+        is_busy = bool(scene.bm_is_processing or (wm and wm.bm_is_processing))
+        status_msg = scene.bm_status_message or (wm.bm_status_message if wm else "") or "Thinking..."
+
         input_sub = bar.row(align=True)
-        input_sub.prop(scene, "bm_input_text", text="")
-        send_sub = input_sub.row(align=True)
-        send_sub.scale_x = 1.2
-        send_btn = send_sub.operator("blendermentor.send_message", text="", icon='PLAY')
-        if scene.bm_is_processing:
+        if is_busy:
+            # When processing, transform the text field directly into the live status display!
+            status_cell = input_sub.row(align=True)
+            thinking_icon_id = get_thinking_icon_id()
+            if thinking_icon_id:
+                status_cell.label(text=status_msg, icon_value=thinking_icon_id)
+            else:
+                status_cell.label(text=status_msg, icon='TIME')
+
+            send_sub = input_sub.row(align=True)
+            send_sub.scale_x = 1.2
+            send_btn = send_sub.operator("blendermentor.send_message", text="", icon='SORTTIME')
             send_btn.enabled = False
+        else:
+            input_sub.prop(scene, "bm_input_text", text="")
+            send_sub = input_sub.row(align=True)
+            send_sub.scale_x = 1.2
+            send_btn = send_sub.operator("blendermentor.send_message", text="", icon='PLAY')
+
         layout.separator(factor=0.3)
 
         # Dynamic auto-expanding card for long text (prevents truncation in N-Panel)
         input_text = scene.bm_input_text.strip()
-        if input_text:
+        if input_text and not is_busy:
             lines = textwrap.wrap(input_text, width=max(18, char_width - 4))
             if len(lines) > 1 or len(input_text) > 20:
                 text_box = layout.box()
@@ -1075,18 +1179,6 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                 for line in lines:
                     text_col.label(text=line)
                 layout.separator(factor=0.3)
-
-        # -------------------------------------------------------------
-        # 3. Live status indicator (Thinking...)
-        # Displayed right below the text box area, above the active card
-        # -------------------------------------------------------------
-        if scene.bm_is_processing:
-            status_box = layout.box()
-            status_row = status_box.row(align=True)
-            status_row.alert = True
-            status_msg = scene.bm_status_message or "Thinking..."
-            status_row.label(text=f"⏳ {status_msg}", icon='SORTTIME')
-            layout.separator(factor=0.3)
 
         # -------------------------------------------------------------
         # 4. Step Navigator & Remote Controls (Only when steps exist)
@@ -1141,7 +1233,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             # Instruction row with Blender icon
             inst_row = card.row(align=True)
             step_icon = step.icon if (step.icon and step.icon != "NONE") else 'LAYER_ACTIVE'
-            inst_lines = textwrap.wrap(step.instruction, width=max(20, char_width - 6))
+            inst_lines = textwrap.wrap(step.instruction, width=max(24, char_width - 3))
             for i, line in enumerate(inst_lines):
                 if i == 0:
                     inst_row.label(text=line, icon=step_icon)
@@ -1152,7 +1244,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             if step.description:
                 desc_box = card.box()
                 desc_col = desc_box.column(align=True)
-                desc_lines = textwrap.wrap(step.description, width=max(20, char_width - 8))
+                desc_lines = textwrap.wrap(step.description, width=max(24, char_width - 4))
                 for line in desc_lines:
                     desc_col.label(text=line)
 
@@ -1160,7 +1252,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             if current == total - 1:
                 fin_box = card.box()
                 fin_col = fin_box.column(align=True)
-                fin_lines = textwrap.wrap("This is the last step. Hope you've achieved what you wanted!", width=max(20, char_width - 8))
+                fin_lines = textwrap.wrap("This is the last step. Hope you've achieved what you wanted!", width=max(24, char_width - 4))
                 for idx_fl, fl in enumerate(fin_lines):
                     if idx_fl == 0:
                         fin_col.label(text=fl, icon='CHECKMARK')
@@ -1279,9 +1371,9 @@ def _calc_char_width(context):
     try:
         ui_scale = context.preferences.view.ui_scale
         w = context.region.width / ui_scale
-        return max(20, int(w / 8.5))
+        return max(24, int(w / 6.2))
     except Exception:
-        return 30
+        return 45
 
 
 # ---------------------------------------------------------------------------
@@ -1411,6 +1503,9 @@ def register():
         mic_active_path = os.path.join(icons_dir, "mic_active.png")
         if os.path.exists(mic_active_path):
             pcoll.load("mic_active", mic_active_path, 'IMAGE')
+        thinking_path = os.path.join(icons_dir, "thinking.png")
+        if os.path.exists(thinking_path):
+            pcoll.load("thinking", thinking_path, 'IMAGE')
         _preview_collections["main"] = pcoll
     except Exception as e:
         print(f"[BlenderMentor] Warning: Could not load preview collection: {e}")

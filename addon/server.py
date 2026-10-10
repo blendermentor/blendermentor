@@ -177,11 +177,19 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                             "highlight": hl,
                         })
 
-                ctrl_source = wm if (wm and hasattr(wm, "bm_remote_mic_active")) else scene
-                followup_step = getattr(ctrl_source, "bm_followup_step", -1) if ctrl_source else -1
-                remote_mic_active = getattr(ctrl_source, "bm_remote_mic_active", False) if ctrl_source else False
-                remote_mic_send = getattr(ctrl_source, "bm_remote_mic_send", False) if ctrl_source else False
-                remote_mic_abort = getattr(ctrl_source, "bm_remote_mic_abort", False) if ctrl_source else False
+                followup_step = getattr(scene, "bm_followup_step", -1) if scene else -1
+                remote_mic_active = bool(
+                    (wm and getattr(wm, "bm_remote_mic_active", False)) or
+                    (scene and getattr(scene, "bm_remote_mic_active", False))
+                )
+                remote_mic_send = bool(
+                    (wm and getattr(wm, "bm_remote_mic_send", False)) or
+                    (scene and getattr(scene, "bm_remote_mic_send", False))
+                )
+                remote_mic_abort = bool(
+                    (wm and getattr(wm, "bm_remote_mic_abort", False)) or
+                    (scene and getattr(scene, "bm_remote_mic_abort", False))
+                )
                 input_text_val = getattr(scene, "bm_input_text", "") if scene else ""
 
                 data = {
