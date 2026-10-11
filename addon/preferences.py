@@ -302,8 +302,8 @@ class BlenderMentorPreferences(bpy.types.AddonPreferences):
     )
 
     auto_open_browser: bpy.props.BoolProperty(
-        name="Auto-open Browser Companion",
-        description="Automatically open the Browser Companion in your web browser when Blender starts",
+        name="Auto-open Console",
+        description="Automatically open the BlenderMentor Console in your web browser when Blender starts",
         default=False,
     )
 

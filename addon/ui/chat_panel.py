@@ -125,6 +125,63 @@ _thinking_animation_cycle = ["Thinking.", "Thinking..", "Thinking...", "Thinking
 _thinking_frame = 0
 
 
+def _format_user_friendly_error(err: Exception) -> str:
+    """Format exceptions into clean, helpful, user-friendly messages."""
+    err_str = str(err)
+    err_lower = err_str.lower()
+
+    # Network / DNS / WiFi offline errors
+    if any(k in err_lower for k in [
+        "nodename nor servname provided",
+        "name or service not known",
+        "temporary failure in name resolution",
+        "getaddrinfo failed",
+        "[errno 8]",
+        "network is unreachable",
+        "connection refused",
+        "timed out",
+        "urlerror",
+        "connection reset"
+    ]):
+        return (
+            "⚠️ No internet connection detected. Please check your Wi-Fi or network "
+            "connection and try again."
+        )
+
+    # Blender internal offline preference disabled
+    if "online access is disabled" in err_lower or "allow internet access" in err_lower:
+        return (
+            "⚠️ Internet access is disabled in Blender's preferences. Please go to "
+            "Edit → Preferences → System → Network and enable 'Allow Internet Access'."
+        )
+
+    # API Key issues
+    if any(k in err_lower for k in ["api_key", "api key", "unauthorized", "401", "invalid api key"]):
+        return (
+            "⚠️ Invalid or missing API key. Please verify your API key in "
+            "Edit → Preferences → Add-ons → BlenderMentor."
+        )
+
+    # Quota / Rate limit
+    if "429" in err_lower or "quota" in err_lower or "rate limit" in err_lower:
+        return (
+            "⚠️ API request limit reached. Please wait a few moments before asking another question."
+        )
+
+    # Model not found / unavailable
+    if "404" in err_lower or "not found" in err_lower:
+        return (
+            "⚠️ Selected AI model could not be found. Please open Preferences → BlenderMentor "
+            "and click 'Fetch Models' to pick an available model."
+        )
+
+    # Fallback: clean up raw exception representation
+    cleaned = err_str
+    if cleaned.startswith("<urlopen error ") and cleaned.endswith(">"):
+        cleaned = cleaned[len("<urlopen error "):-1]
+    return f"⚠️ {cleaned}"
+
+
 def _poll_worker_done():
     """Timer callback — checks if the background AI call has finished."""
     global _worker_result, _worker_thread, _thinking_frame
@@ -173,7 +230,7 @@ def _poll_worker_done():
     if isinstance(result, Exception):
         if scene:
             reply = scene.bm_chat_history.add()
-            reply.text = f"❌ Error: {str(result)}"
+            reply.text = _format_user_friendly_error(result)
             reply.is_user = False
     else:
         if scene:
@@ -541,15 +598,15 @@ class BLENDERMENTOR_OT_clear_chat(bpy.types.Operator):
 
 class BLENDERMENTOR_OT_open_web_companion(bpy.types.Operator):
     bl_idname = "blendermentor.open_web_companion"
-    bl_label = "Browser Companion"
-    bl_description = "Open BlenderMentor in a browser window (ideal for dual monitors & voice input)"
+    bl_label = "BlenderMentor Console"
+    bl_description = "Open BlenderMentor Console in a browser window (ideal for dual monitors & voice input)"
 
     def execute(self, context):
         import webbrowser
         port = 8765
         url = f"http://127.0.0.1:{port}"
         webbrowser.open(url)
-        self.report({'INFO'}, f"Opened BlenderMentor Companion at {url}")
+        self.report({'INFO'}, f"Opened BlenderMentor Console at {url}")
 
         def _refresh_poll():
             from ..server import is_companion_connected
@@ -568,10 +625,10 @@ class BLENDERMENTOR_OT_open_web_companion(bpy.types.Operator):
 
 
 class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
-    """Voice Dictation: Click to toggle dictation in the Browser Companion (Alt + Up Arrow)."""
+    """Voice Dictation: Click to toggle dictation in the BlenderMentor Console (Alt + Up Arrow)."""
     bl_idname = "blendermentor.hybrid_mic"
     bl_label = "Voice Dictation"
-    bl_description = "Toggle Voice Dictation in Browser Companion (Alt + Up Arrow)"
+    bl_description = "Toggle Voice Dictation in BlenderMentor Console (Alt + Up Arrow)"
 
     def execute(self, context):
         import webbrowser
@@ -589,12 +646,12 @@ class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
                 wm.bm_remote_mic_send = send
                 wm.bm_remote_mic_abort = abort
 
-        # 1. If companion browser is not connected, open it automatically and activate mic
+        # 1. If console browser is not connected, open it automatically and activate mic
         if not is_companion_connected(timeout=4.0):
             url = "http://127.0.0.1:8765"
             webbrowser.open(url)
             _set_mic_state(active=True, send=False, abort=False)
-            self.report({'INFO'}, "Opening Browser Companion for voice dictation...")
+            self.report({'INFO'}, "Opening BlenderMentor Console for voice dictation...")
             for window in context.window_manager.windows:
                 for area in window.screen.areas:
                     area.tag_redraw()
@@ -1115,7 +1172,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             start_box = layout.box()
             start_col = start_box.column(align=True)
             start_col.scale_y = 1.35
-            start_col.label(text="Browser Companion Not Connected", icon='INFO')
+            start_col.label(text="Console Not Connected", icon='INFO')
             start_col.operator(
                 "blendermentor.open_web_companion",
                 text="Start BlenderMentor",
