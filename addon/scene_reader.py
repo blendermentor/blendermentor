@@ -13,6 +13,80 @@ import ssl
 import gzip
 import re
 import platform
+import os
+import mathutils
+
+
+# ---------------------------------------------------------------------------
+# Authoritative context resolution helpers (thread-safe)
+# ---------------------------------------------------------------------------
+
+def _get_active_object(context=None):
+    """Return the active object robustly across main and background worker threads."""
+    ctx = context or bpy.context
+    active = getattr(ctx, "active_object", None)
+    if active is not None:
+        return active
+    scene = getattr(ctx, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
+    if scene and hasattr(scene, "view_layers") and len(scene.view_layers) > 0:
+        vl = scene.view_layers[0]
+        active = getattr(getattr(vl, "objects", None), "active", None)
+        if active is not None:
+            return active
+    return None
+
+
+def _get_selected_objects(context=None):
+    """Return the list of selected objects robustly across main and background threads."""
+    ctx = context or bpy.context
+    selected = getattr(ctx, "selected_objects", None)
+    if selected is not None:
+        return list(selected)
+    scene = getattr(ctx, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
+    if scene:
+        return [o for o in getattr(scene, "objects", []) if getattr(o, "select_get", lambda: False)()]
+    return []
+
+
+def _resolve_interaction_mode(obj=None, context=None) -> str:
+    """Return the canonical Blender interaction mode string (e.g. 'EDIT_MESH', 'OBJECT', 'SCULPT').
+
+    Thread-safe: computes mode from the object data-block when called in background threads
+    where bpy.context.mode is detached/defaults to 'OBJECT'.
+    """
+    if obj is None:
+        obj = _get_active_object(context)
+    if obj is None:
+        return "OBJECT"
+
+    raw_mode = getattr(obj, "mode", "OBJECT")
+    if raw_mode == "EDIT":
+        obj_type = getattr(obj, "type", "")
+        if obj_type == "MESH":
+            return "EDIT_MESH"
+        elif obj_type == "CURVE":
+            return "EDIT_CURVE"
+        elif obj_type == "SURFACE":
+            return "EDIT_SURFACE"
+        elif obj_type == "FONT":
+            return "EDIT_TEXT"
+        elif obj_type == "ARMATURE":
+            return "EDIT_ARMATURE"
+        elif obj_type == "METABALL":
+            return "EDIT_METABALL"
+        elif obj_type == "LATTICE":
+            return "EDIT_LATTICE"
+        elif "GPENCIL" in obj_type or "GREASE" in obj_type:
+            return "EDIT_GPENCIL"
+        return "EDIT"
+    elif raw_mode == "VERTEX_PAINT":
+        return "PAINT_VERTEX"
+    elif raw_mode == "WEIGHT_PAINT":
+        return "PAINT_WEIGHT"
+    elif raw_mode == "TEXTURE_PAINT":
+        return "PAINT_TEXTURE"
+
+    return raw_mode
 
 
 # ---------------------------------------------------------------------------
@@ -23,7 +97,7 @@ def get_basic_context() -> dict:
     """Return a rich yet compact dict with the scene essentials so the AI can answer immediately."""
     ctx = {}
     scene = bpy.context.scene
-    obj = bpy.context.active_object
+    obj = _get_active_object()
 
     # Environment & Version (guarantees accurate version-matched guidance)
     ctx["blender_version"] = bpy.app.version_string
@@ -32,17 +106,21 @@ def get_basic_context() -> dict:
     # Active scene essentials
     ctx["active_object"] = obj.name if obj else None
     ctx["active_object_type"] = obj.type if obj else None
-    ctx["mode"] = bpy.context.mode
+    ctx["mode"] = _resolve_interaction_mode(obj)
     ctx["render_engine"] = scene.render.engine
 
-    # Selection state
-    selected = bpy.context.selected_objects
-    ctx["selected_objects"] = [{"name": o.name, "type": o.type} for o in selected]
+    # Selection state (with each object's individual mode)
+    selected = _get_selected_objects()
+    ctx["selected_objects"] = [
+        {"name": o.name, "type": o.type, "mode": getattr(o, "mode", "OBJECT")}
+        for o in selected
+    ]
     ctx["selection_count"] = len(selected)
 
     # Active object details (modifiers, materials, transforms, mesh topology)
     if obj:
         obj_info = {
+            "mode": getattr(obj, "mode", "OBJECT"),
             "scale": [round(s, 4) for s in obj.scale],
             "scale_applied": all(abs(s - 1.0) < 0.001 for s in obj.scale),
             "visible": obj.visible_get(),
@@ -50,19 +128,40 @@ def get_basic_context() -> dict:
         if hasattr(obj, "dimensions"):
             obj_info["dimensions"] = [round(d, 4) for d in obj.dimensions]
 
-        # Existing modifiers on active object
+        # Existing modifiers on active object (with key params for common types)
         if hasattr(obj, "modifiers"):
-            obj_info["modifiers"] = [
-                {"name": m.name, "type": m.type, "show_viewport": m.show_viewport}
-                for m in obj.modifiers
-            ]
+            mod_list = []
+            for i, m in enumerate(obj.modifiers):
+                mod_entry = {"index": i, "name": m.name, "type": m.type,
+                             "show_viewport": m.show_viewport}
+                try:
+                    if m.type == 'MIRROR':
+                        mod_entry["use_axis"] = list(m.use_axis)
+                    elif m.type == 'SUBSURF':
+                        mod_entry["levels"] = m.levels
+                    elif m.type == 'BEVEL':
+                        mod_entry["width"] = round(m.width, 6)
+                        mod_entry["segments"] = m.segments
+                    elif m.type == 'BOOLEAN':
+                        mod_entry["operation"] = m.operation
+                    elif m.type == 'ARRAY':
+                        mod_entry["count"] = m.count
+                except Exception:
+                    pass
+                mod_list.append(mod_entry)
+            obj_info["modifiers"] = mod_list
 
         # Materials on active object
         if hasattr(obj, "data") and hasattr(obj.data, "materials"):
             obj_info["materials"] = [m.name for m in obj.data.materials if m]
 
-        # Mesh topology count
+        # Mesh topology count (fresh in Edit Mode)
         if obj.type == 'MESH' and obj.data:
+            if getattr(obj, "mode", "") == 'EDIT':
+                try:
+                    obj.update_from_editmode()
+                except Exception:
+                    pass
             obj_info["vertex_count"] = len(obj.data.vertices)
             obj_info["face_count"] = len(obj.data.polygons)
 
@@ -161,19 +260,25 @@ def get_viewport_state() -> dict:
         "show_gizmo": None,
     }
 
-    # Find the active VIEW_3D space
+    # Find the active VIEW_3D space (resolves robustly in background threads)
     try:
-        for area in bpy.context.screen.areas:
-            if area.type == 'VIEW_3D':
-                space = area.spaces.active
-                if space and space.type == 'VIEW_3D':
-                    shading = space.shading
-                    result["shading_type"] = shading.type  # WIREFRAME, SOLID, MATERIAL, RENDERED
-                    result["shading_light"] = shading.light  # STUDIO, MATCAP, FLAT
-                    result["shading_color_type"] = shading.color_type  # MATERIAL, SINGLE, OBJECT, RANDOM, VERTEX, TEXTURE
-                    result["show_overlays"] = space.overlay.show_overlays
-                    result["show_gizmo"] = space.show_gizmo
-                    break
+        screen = getattr(bpy.context, "screen", None)
+        if not screen:
+            wm = getattr(bpy.context, "window_manager", None) or (bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None)
+            if wm and len(wm.windows) > 0:
+                screen = wm.windows[0].screen
+        if screen:
+            for area in screen.areas:
+                if area.type == 'VIEW_3D':
+                    space = area.spaces.active
+                    if space and space.type == 'VIEW_3D':
+                        shading = space.shading
+                        result["shading_type"] = shading.type  # WIREFRAME, SOLID, MATERIAL, RENDERED
+                        result["shading_light"] = shading.light  # STUDIO, MATCAP, FLAT
+                        result["shading_color_type"] = shading.color_type  # MATERIAL, SINGLE, OBJECT, RANDOM, VERTEX, TEXTURE
+                        result["show_overlays"] = space.overlay.show_overlays
+                        result["show_gizmo"] = space.show_gizmo
+                        break
     except Exception:
         pass
 
@@ -186,9 +291,14 @@ def get_object_details(object_name: str) -> dict:
     if not obj:
         return {"error": f"Object '{object_name}' not found in scene."}
 
+    raw_mode = getattr(obj, "mode", "OBJECT")
+    is_edit_mode = raw_mode == "EDIT" or (obj.type == 'MESH' and getattr(obj.data, "is_editmode", False))
+
     result = {
         "name": obj.name,
         "type": obj.type,
+        "mode": raw_mode,
+        "is_edit_mode": is_edit_mode,
         "location": list(obj.location),
         "rotation_euler": list(obj.rotation_euler),
         "scale": list(obj.scale),
@@ -197,13 +307,49 @@ def get_object_details(object_name: str) -> dict:
         "hide_render": obj.hide_render,
     }
 
-    # Modifiers
+    # Modifiers (with key diagnostic parameters inline)
     if hasattr(obj, "modifiers"):
-        result["modifiers"] = [
-            {"name": m.name, "type": m.type, "show_viewport": m.show_viewport,
-             "show_render": m.show_render}
-            for m in obj.modifiers
-        ]
+        mod_list = []
+        for i, m in enumerate(obj.modifiers):
+            mod_info = {
+                "index": i,
+                "name": m.name,
+                "type": m.type,
+                "show_viewport": m.show_viewport,
+                "show_render": m.show_render,
+                "show_in_editmode": getattr(m, "show_in_editmode", None),
+            }
+            # Add a few key parameters for common modifier types
+            # (full details available via get_modifier_details tool)
+            try:
+                if m.type == 'MIRROR':
+                    mod_info["use_axis"] = list(m.use_axis)
+                    mod_info["use_clip"] = m.use_clip
+                    mod_info["mirror_object"] = m.mirror_object.name if m.mirror_object else None
+                elif m.type == 'SUBSURF':
+                    mod_info["levels"] = m.levels
+                    mod_info["render_levels"] = m.render_levels
+                elif m.type == 'BEVEL':
+                    mod_info["width"] = round(m.width, 6)
+                    mod_info["segments"] = m.segments
+                    mod_info["limit_method"] = m.limit_method
+                elif m.type == 'BOOLEAN':
+                    mod_info["operation"] = m.operation
+                    mod_info["object"] = m.object.name if m.object else None
+                    mod_info["solver"] = getattr(m, "solver", None)
+                elif m.type == 'ARRAY':
+                    mod_info["count"] = m.count
+                    mod_info["use_relative_offset"] = m.use_relative_offset
+                elif m.type == 'SOLIDIFY':
+                    mod_info["thickness"] = round(m.thickness, 6)
+                    mod_info["offset"] = round(m.offset, 6)
+                elif m.type == 'SHRINKWRAP':
+                    mod_info["target"] = m.target.name if m.target else None
+                    mod_info["wrap_method"] = m.wrap_method
+            except Exception:
+                pass
+            mod_list.append(mod_info)
+        result["modifiers"] = mod_list
 
     # Materials
     if hasattr(obj, "data") and hasattr(obj.data, "materials"):
@@ -216,8 +362,13 @@ def get_object_details(object_name: str) -> dict:
             for c in obj.constraints
         ]
 
-    # Mesh-specific details
+    # Mesh-specific details (flush in Edit Mode for consistent vertex counts)
     if obj.type == 'MESH' and obj.data:
+        if raw_mode == 'EDIT':
+            try:
+                obj.update_from_editmode()
+            except Exception:
+                pass
         mesh = obj.data
         result["vertex_count"] = len(mesh.vertices)
         result["face_count"] = len(mesh.polygons)
@@ -227,50 +378,863 @@ def get_object_details(object_name: str) -> dict:
         result["vertex_groups"] = [vg.name for vg in obj.vertex_groups]
         result["has_shape_keys"] = obj.data.shape_keys is not None
 
-    # Animation
-    result["has_animation_data"] = obj.animation_data is not None
-    if obj.animation_data and obj.animation_data.action:
-        result["action_name"] = obj.animation_data.action.name
+    # Animation overview
+    if obj.animation_data:
+        anim = obj.animation_data
+        anim_summary = {
+            "has_animation_data": True,
+            "action_name": anim.action.name if anim.action else None,
+            "has_drivers": len(getattr(anim, "drivers", [])) > 0,
+            "has_nla_tracks": len(getattr(anim, "nla_tracks", [])) > 0,
+        }
+        try:
+            fcs = _get_object_fcurves(obj)
+            if fcs:
+                anim_summary["animated_properties"] = sorted(list(set(fc.data_path for fc in fcs)))
+                interps = set()
+                for fc in fcs:
+                    for kp in fc.keyframe_points:
+                        interps.add(kp.interpolation)
+                anim_summary["interpolations_used"] = sorted(list(interps))
+                anim_summary["total_fcurves"] = len(fcs)
+        except Exception:
+            pass
+        result["animation"] = anim_summary
+        result["has_animation_data"] = True
+        result["action_name"] = anim_summary["action_name"]
+    else:
+        result["has_animation_data"] = False
+        result["action_name"] = None
+        result["animation"] = None
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Animation inspection (cross-version: Blender 4.0-4.3 legacy & 4.4+/5.x layered/slotted)
+# ---------------------------------------------------------------------------
+
+def _channel_name(data_path: str, array_index: int) -> str:
+    """Generate a clean, readable channel name like 'Location X' or 'Rotation Y'."""
+    axis_map = {0: 'X', 1: 'Y', 2: 'Z', 3: 'W'}
+    if data_path in ('location', 'rotation_euler', 'scale', 'delta_location', 'delta_rotation_euler', 'delta_scale'):
+        prefix = data_path.replace('_euler', '').capitalize()
+        axis = axis_map.get(array_index, str(array_index))
+        return f"{prefix} {axis}"
+    return f"{data_path}[{array_index}]"
+
+
+def _extract_fcurves_from_action(action, slot=None, data_path: str = None) -> list:
+    """Extract F-curves from an action across Blender versions.
+    
+    Supports:
+    - Blender 4.0 - 4.3 legacy actions (direct action.fcurves)
+    - Blender 4.4+ / 5.0+ Slotted & Layered actions (action.layers -> strip.channelbags)
+    """
+    if not action:
+        return []
+    fcurves = []
+    seen = set()
+
+    def _add_fc(fc):
+        key = (fc.data_path, fc.array_index)
+        if key not in seen:
+            if data_path is None or fc.data_path == data_path:
+                fcurves.append(fc)
+                seen.add(key)
+
+    # 1. Legacy action (Blender 4.0-4.3, or legacy unslotted action in Blender 5.x)
+    if hasattr(action, "fcurves") and len(action.fcurves) > 0:
+        for fc in action.fcurves:
+            _add_fc(fc)
+
+    # 2. Slotted / Layered action (Blender 4.4+, 5.0+)
+    if hasattr(action, "layers"):
+        for layer in getattr(action, "layers", []):
+            for strip in getattr(layer, "strips", []):
+                # If slot is provided, try direct slot channelbag first
+                if slot and hasattr(strip, "channelbag"):
+                    try:
+                        cb = strip.channelbag(slot)
+                        if cb and hasattr(cb, "fcurves"):
+                            for fc in cb.fcurves:
+                                _add_fc(fc)
+                    except Exception:
+                        pass
+                # Also inspect channelbags collection
+                if hasattr(strip, "channelbags"):
+                    for cb in strip.channelbags:
+                        cb_slot = getattr(cb, "slot", None)
+                        if slot is None or cb_slot == slot:
+                            for fc in getattr(cb, "fcurves", []):
+                                _add_fc(fc)
+    return fcurves
+
+
+def _get_object_fcurves(obj, data_path: str = None) -> list:
+    """Retrieve all active F-curves for an object, checking active action and NLA tracks."""
+    if not obj or not getattr(obj, "animation_data", None):
+        return []
+    anim = obj.animation_data
+    slot = getattr(anim, "action_slot", None)
+
+    # 1. Active action
+    if anim.action:
+        fcs = _extract_fcurves_from_action(anim.action, slot, data_path)
+        if fcs:
+            return fcs
+
+    # 2. NLA tracks (if active action is None or use_nla is True)
+    if getattr(anim, "use_nla", False) or (anim.action is None and hasattr(anim, "nla_tracks")):
+        for track in getattr(anim, "nla_tracks", []):
+            if track.mute:
+                continue
+            for strip in getattr(track, "strips", []):
+                if strip.mute or not strip.action:
+                    continue
+                fcs = _extract_fcurves_from_action(strip.action, slot, data_path)
+                if fcs:
+                    return fcs
+
+    return []
+
+
+def get_animation_details(object_name: str, data_path: str = None) -> dict:
+    """Return detailed animation data: F-curves, keyframe frames, values, interpolation, easing, handles, F-curve modifiers, and drivers.
+
+    Supports both legacy actions (Blender 4.0-4.3) and layered/slotted actions (Blender 4.4+/5.x).
+    """
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"error": f"Object '{object_name}' not found in scene."}
+
+    if not obj.animation_data:
+        return {
+            "object_name": object_name,
+            "has_animation_data": False,
+            "diagnostic_summary": f"Object '{object_name}' has no animation data or keyframes assigned.",
+        }
+
+    anim = obj.animation_data
+    action = anim.action
+    action_name = action.name if action else None
+    action_type = "layered" if (action and hasattr(action, "layers")) else ("legacy" if (action and hasattr(action, "fcurves")) else None)
+    slot_name = getattr(anim.action_slot, "name_display", None) if getattr(anim, "action_slot", None) else None
+
+    # Retrieve matching F-curves using cross-version extractor
+    all_fcurves = _get_object_fcurves(obj, None)
+    all_animated_paths = sorted(list(set(fc.data_path for fc in all_fcurves)))
+
+    if data_path:
+        target_fcurves = [fc for fc in all_fcurves if fc.data_path == data_path]
+    else:
+        target_fcurves = all_fcurves
+
+    # Check if object has animation data but lacks the requested data_path
+    if data_path and not target_fcurves:
+        return {
+            "object_name": object_name,
+            "has_animation_data": True,
+            "action_name": action_name,
+            "requested_data_path": data_path,
+            "error": f"No keyframes found for property '{data_path}' on object '{object_name}'.",
+            "available_animated_properties": all_animated_paths,
+            "diagnostic_summary": (
+                f"Object '{object_name}' has an active action ('{action_name}'), but no keyframes exist for '{data_path}'. "
+                f"Available animated properties are: {all_animated_paths}."
+            )
+        }
+
+    fcurves_data = []
+    observed_interpolations = set()
+    stepped_channels = []
+    linear_channels = []
+    bezier_channels = []
+    active_fc_modifiers = []
+
+    for fc in target_fcurves:
+        ch_name = _channel_name(fc.data_path, fc.array_index)
+
+        # F-curve modifiers (e.g. Stepped, Cycles, Noise)
+        fc_mods = []
+        for m in getattr(fc, "modifiers", []):
+            if m.mute:
+                continue
+            mod_item = {
+                "type": m.type,
+                "is_active": getattr(m, "is_active", True),
+            }
+            if m.type == 'STEPPED':
+                mod_item["frame_step"] = getattr(m, "frame_step", None)
+                mod_item["frame_offset"] = getattr(m, "frame_offset", None)
+                active_fc_modifiers.append(f"{ch_name} has active Stepped modifier (step={mod_item['frame_step']})")
+            elif m.type == 'CYCLES':
+                mod_item["mode_before"] = getattr(m, "mode_before", None)
+                mod_item["mode_after"] = getattr(m, "mode_after", None)
+            elif m.type == 'NOISE':
+                mod_item["scale"] = round(getattr(m, "scale", 1.0), 4)
+                mod_item["strength"] = round(getattr(m, "strength", 1.0), 4)
+            fc_mods.append(mod_item)
+
+        kps = fc.keyframe_points
+        kp_list = []
+        for i, kp in enumerate(kps):
+            if i >= 50:  # Cap at 50 keyframes per channel to keep token usage sane
+                kp_list.append({"note": f"... [{len(kps) - 50} additional keyframes truncated]"})
+                break
+
+            frame_val = round(kp.co[0], 2) if abs(kp.co[0] - round(kp.co[0])) < 0.001 else round(kp.co[0], 4)
+            interp = kp.interpolation
+            observed_interpolations.add(interp)
+
+            if interp == 'CONSTANT' and ch_name not in stepped_channels:
+                stepped_channels.append(ch_name)
+            elif interp == 'LINEAR' and ch_name not in linear_channels:
+                linear_channels.append(ch_name)
+            elif interp == 'BEZIER' and ch_name not in bezier_channels:
+                bezier_channels.append(ch_name)
+
+            kp_entry = {
+                "frame": frame_val,
+                "value": round(kp.co[1], 4),
+                "interpolation": interp,
+                "easing": kp.easing,
+            }
+
+            if interp == 'BEZIER':
+                kp_entry["handle_left_type"] = kp.handle_left_type
+                kp_entry["handle_right_type"] = kp.handle_right_type
+                kp_entry["handle_left"] = [round(kp.handle_left[0], 2), round(kp.handle_left[1], 4)]
+                kp_entry["handle_right"] = [round(kp.handle_right[0], 2), round(kp.handle_right[1], 4)]
+
+            kp_list.append(kp_entry)
+
+        fc_info = {
+            "channel": ch_name,
+            "data_path": fc.data_path,
+            "array_index": fc.array_index,
+            "mute": fc.mute,
+            "lock": fc.lock,
+            "keyframe_count": len(kps),
+            "keyframes": kp_list,
+        }
+        if fc_mods:
+            fc_info["fcurve_modifiers"] = fc_mods
+        fcurves_data.append(fc_info)
+
+    # Inspect drivers if any
+    drivers_data = []
+    if hasattr(anim, "drivers"):
+        for d in anim.drivers:
+            if data_path is None or d.data_path == data_path:
+                drv_info = {
+                    "channel": _channel_name(d.data_path, d.array_index),
+                    "data_path": d.data_path,
+                    "array_index": d.array_index,
+                    "mute": d.mute,
+                }
+                if hasattr(d, "driver"):
+                    drv_info["type"] = d.driver.type
+                    drv_info["expression"] = d.driver.expression
+                    drv_info["is_valid"] = d.driver.is_valid
+                drivers_data.append(drv_info)
+
+    # Synthesize evidence-based diagnostic summary
+    summary_parts = []
+    summary_parts.append(f"Action '{action_name or 'None'}' ({action_type or 'unslotted'}) on '{object_name}'.")
+
+    if active_fc_modifiers:
+        summary_parts.append(f"CRITICAL: Active F-curve modifier(s) detected: {'; '.join(active_fc_modifiers)}.")
+
+    if 'CONSTANT' in observed_interpolations:
+        summary_parts.append(
+            f"OBSERVED: CONSTANT interpolation on channel(s) {stepped_channels}. "
+            f"Constant interpolation holds each keyframe value static until the next frame, producing stepped / choppy jumps instead of continuous motion."
+        )
+    elif 'LINEAR' in observed_interpolations and 'BEZIER' not in observed_interpolations:
+        summary_parts.append(
+            f"OBSERVED: LINEAR interpolation on channel(s) {linear_channels}. "
+            f"Motion travels at constant speed between keyframes with abrupt corner transitions and no smooth acceleration/deceleration (no easing)."
+        )
+    elif 'BEZIER' in observed_interpolations:
+        summary_parts.append(
+            f"OBSERVED: BEZIER interpolation on channel(s) {bezier_channels} with smooth curve transitions."
+        )
+
+    result = {
+        "object_name": object_name,
+        "has_animation_data": True,
+        "action_name": action_name,
+        "action_type": action_type,
+        "action_slot": slot_name,
+        "animated_properties": all_animated_paths,
+        "fcurves_inspected": len(fcurves_data),
+        "fcurves": fcurves_data,
+        "diagnostic_summary": " ".join(summary_parts),
+    }
+    if drivers_data:
+        result["drivers"] = drivers_data
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Modifier detail inspector (reads type-specific parameters via RNA)
+# ---------------------------------------------------------------------------
+
+def _serialize_modifier_value(value, depth: int = 0):
+    """Convert a bpy property value to a JSON-serializable type."""
+    if depth > 3:
+        return str(value)
+    if value is None:
+        return None
+    if isinstance(value, (bool, int, str)):
+        return value
+    if isinstance(value, float):
+        return round(value, 6)
+    # Object/data-block reference (has .name and is a bpy ID type)
+    if hasattr(value, "name") and hasattr(value, "bl_rna"):
+        return {"reference": value.name, "type": type(value).__name__}
+    # bpy_prop_array, Vector, Color, Euler, Quaternion, list, tuple, etc.
+    if hasattr(value, "__iter__") and not isinstance(value, (str, bytes)):
+        try:
+            items = []
+            for i, v in enumerate(value):
+                if i >= 50:  # Prevent huge array dumps
+                    items.append("... [truncated]")
+                    break
+                items.append(_serialize_modifier_value(v, depth + 1))
+            return items
+        except (TypeError, ValueError, Exception):
+            return str(value)
+    return str(value)
+
+
+def get_modifier_details(object_name: str, modifier_name: str) -> dict:
+    """Return the type-specific configuration parameters of a modifier.
+
+    Uses Blender's RNA introspection to dynamically read all parameters
+    specific to the modifier type (e.g. Mirror axis, Bevel width,
+    Subdivision levels) without hardcoding property names per type.
+    """
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"error": f"Object '{object_name}' not found in scene."}
+
+    mod = obj.modifiers.get(modifier_name)
+    if not mod:
+        available = [m.name for m in obj.modifiers]
+        return {
+            "error": f"Modifier '{modifier_name}' not found on '{object_name}'.",
+            "available_modifiers": available,
+        }
+
+    # Basic modifier metadata
+    mod_list = list(obj.modifiers)
+    result = {
+        "object_name": object_name,
+        "modifier_name": mod.name,
+        "modifier_type": mod.type,
+        "modifier_index": mod_list.index(mod),
+        "modifier_count": len(mod_list),
+        "show_viewport": mod.show_viewport,
+        "show_render": mod.show_render,
+        "show_in_editmode": getattr(mod, "show_in_editmode", None),
+        "show_on_cage": getattr(mod, "show_on_cage", None),
+    }
+
+    # Modifier stack context: list other modifiers and their order
+    result["modifier_stack"] = [
+        {"index": i, "name": m.name, "type": m.type}
+        for i, m in enumerate(mod_list)
+    ]
+
+    # Collect base Modifier property identifiers to exclude
+    base_prop_ids = set()
+    try:
+        for p in bpy.types.Modifier.bl_rna.properties:
+            base_prop_ids.add(p.identifier)
+    except Exception:
+        base_prop_ids = {
+            "name", "type", "show_viewport", "show_render",
+            "show_in_editmode", "show_expanded", "is_active",
+            "show_on_cage", "use_apply_on_spline", "is_override_data",
+            "rna_type",
+        }
+
+    # Read type-specific parameters via RNA introspection
+    parameters = {}
+    for prop in mod.bl_rna.properties:
+        pid = prop.identifier
+        if pid in base_prop_ids:
+            continue
+        if pid.startswith("bl_") or pid == "rna_type":
+            continue
+        try:
+            value = getattr(mod, pid)
+            parameters[pid] = _serialize_modifier_value(value)
+        except Exception:
+            continue
+
+    result["parameters"] = parameters
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Mesh geometry summary (lightweight diagnostic data)
+# ---------------------------------------------------------------------------
+
+def get_mesh_geometry_summary(object_name: str) -> dict:
+    """Return a lightweight geometry summary for diagnostic reasoning.
+
+    Includes the mesh bounding box and centroid in object-local space and world space,
+    whether vertices touch each axis plane (critical for Mirror/Screw),
+    custom normals status, loose geometry counts, and non-manifold edge
+    count (capped at 100K vertices for performance).
+    Flushes Edit Mode changes if the object is currently being edited.
+    """
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"error": f"Object '{object_name}' not found in scene."}
+    if obj.type != 'MESH':
+        return {"error": f"Object '{object_name}' is type '{obj.type}', not a mesh."}
+    if not obj.data:
+        return {"error": f"Object '{object_name}' has no mesh data."}
+
+    mesh = obj.data
+    is_edit_mode = (getattr(obj, "mode", "") == 'EDIT' or getattr(mesh, "is_editmode", False))
+    if is_edit_mode:
+        try:
+            obj.update_from_editmode()
+        except Exception:
+            pass
+
+    verts = mesh.vertices
+    n = len(verts)
+
+    if n == 0:
+        return {
+            "object_name": object_name,
+            "mode": _resolve_interaction_mode(obj),
+            "vertex_count": 0,
+            "error": "Mesh has no vertices.",
+            "is_edit_mode": is_edit_mode,
+        }
+
+    # Bounding box in object-local space computed directly from vertex coordinates
+    # (obj.bound_box is not updated by Blender while remaining in Edit Mode)
+    bb_min_local = [min(v.co[i] for v in verts) for i in range(3)]
+    bb_max_local = [max(v.co[i] for v in verts) for i in range(3)]
+
+    # World-space bounding box computed by transforming the 8 local bbox corners by matrix_world
+    corners_local = [
+        mathutils.Vector((
+            bb_min_local[0] if (i & 1) == 0 else bb_max_local[0],
+            bb_min_local[1] if (i & 2) == 0 else bb_max_local[1],
+            bb_min_local[2] if (i & 4) == 0 else bb_max_local[2]
+        ))
+        for i in range(8)
+    ]
+    corners_world = [obj.matrix_world @ c for c in corners_local]
+    bb_min_world = [min(c[j] for c in corners_world) for j in range(3)]
+    bb_max_world = [max(c[j] for c in corners_world) for j in range(3)]
+
+    # Centroid (average vertex position in local space and world space)
+    cx, cy, cz = 0.0, 0.0, 0.0
+    for v in verts:
+        cx += v.co.x
+        cy += v.co.y
+        cz += v.co.z
+    centroid_local = [round(cx / n, 6), round(cy / n, 6), round(cz / n, 6)]
+    centroid_world_vec = obj.matrix_world @ mathutils.Vector((cx / n, cy / n, cz / n))
+    centroid_world = [round(centroid_world_vec[j], 6) for j in range(3)]
+
+    # Check if any vertex sits on each axis plane in local space (within a small tolerance)
+    # This is directly diagnostic for Mirror (vertices should touch the mirror plane)
+    tol = 0.0001
+    has_verts_on_x0 = any(abs(v.co.x) < tol for v in verts)
+    has_verts_on_y0 = any(abs(v.co.y) < tol for v in verts)
+    has_verts_on_z0 = any(abs(v.co.z) < tol for v in verts)
+
+    result = {
+        "object_name": object_name,
+        "mode": _resolve_interaction_mode(obj),
+        "is_edit_mode": is_edit_mode,
+        "vertex_count": n,
+        "face_count": len(mesh.polygons),
+        "edge_count": len(mesh.edges),
+        "bounding_box_min": [round(v, 6) for v in bb_min_local],
+        "bounding_box_max": [round(v, 6) for v in bb_max_local],
+        "bounding_box_local_min": [round(v, 6) for v in bb_min_local],
+        "bounding_box_local_max": [round(v, 6) for v in bb_max_local],
+        "bounding_box_world_min": [round(v, 6) for v in bb_min_world],
+        "bounding_box_world_max": [round(v, 6) for v in bb_max_world],
+        "dimensions_local": [round(bb_max_local[i] - bb_min_local[i], 6) for i in range(3)],
+        "dimensions_world": [round(bb_max_world[i] - bb_min_world[i], 6) for i in range(3)],
+        "centroid_local": centroid_local,
+        "centroid_world": centroid_world,
+        "has_vertices_on_x_plane": has_verts_on_x0,
+        "has_vertices_on_y_plane": has_verts_on_y0,
+        "has_vertices_on_z_plane": has_verts_on_z0,
+        "object_location": [round(v, 6) for v in obj.location],
+        "object_scale": [round(v, 6) for v in obj.scale],
+        "scale_applied": all(abs(s - 1.0) < 0.001 for s in obj.scale),
+    }
+
+    # Custom normals (safe across Blender 4.0 / 4.1 / 4.2+)
+    result["has_custom_normals"] = getattr(mesh, "has_custom_normals", False)
+
+    # Loose vertices and edges (vertices/edges not connected to any face)
+    loose_verts = 0
+    loose_edges = 0
+    if n <= 200000:  # skip for very high-poly meshes
+        face_vert_set = set()
+        for poly in mesh.polygons:
+            face_vert_set.update(poly.vertices)
+        loose_verts = n - len(face_vert_set)
+
+        # Loose edges: edges where neither vertex belongs to any polygon face
+        loose_edges = sum(
+            1 for e in mesh.edges
+            if e.vertices[0] not in face_vert_set and e.vertices[1] not in face_vert_set
+        )
+        result["loose_vertices"] = loose_verts
+        result["loose_edges"] = loose_edges
+    else:
+        result["loose_vertices"] = "skipped (high-poly mesh)"
+        result["loose_edges"] = "skipped (high-poly mesh)"
+
+    # Non-manifold edge count (edges not shared by exactly 2 faces)
+    if n <= 100000:
+        try:
+            import bmesh
+            bm = bmesh.new()
+            bm.from_mesh(mesh)
+            non_manifold = sum(1 for e in bm.edges if not e.is_manifold)
+            result["non_manifold_edges"] = non_manifold
+            bm.free()
+        except Exception:
+            result["non_manifold_edges"] = "could not compute"
+    else:
+        result["non_manifold_edges"] = "skipped (high-poly mesh)"
 
     return result
 
 
 def get_selection_info() -> dict:
-    """Return info about the current selection (all selected objects)."""
-    selected = getattr(bpy.context, "selected_objects", None)
-    if selected is None:
-        scene = getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
-        selected = [o for o in getattr(scene, "objects", []) if getattr(o, "select_get", lambda: False)()]
-    active = getattr(bpy.context, "active_object", None)
-    if active is None:
-        scene = getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
-        vl = getattr(scene, "view_layers", [None])[0] if (scene and hasattr(scene, "view_layers") and len(scene.view_layers) > 0) else None
-        active = getattr(getattr(vl, "objects", None), "active", None) if vl else None
+    """Return info about the current selection (all selected objects).
+
+    When in Edit Mode on a mesh object, also inspects sub-element selection:
+    active mesh_select_mode (vertex/edge/face), selected and total counts
+    for vertices, edges, and faces, and flags if no sub-elements are selected.
+    Works robustly across main and background threads.
+    """
+    selected = _get_selected_objects()
+    active = _get_active_object()
+
+    mode_str = _resolve_interaction_mode(active)
+    active_obj_mode = getattr(active, "mode", "OBJECT") if active else "OBJECT"
+    is_edit_mode = active_obj_mode == 'EDIT'
 
     result = {
+        "mode": mode_str,
         "active_object": active.name if active else None,
+        "active_object_mode": active_obj_mode,
+        "is_edit_mode": is_edit_mode,
         "selected_objects": [
-            {"name": o.name, "type": o.type} for o in selected
+            {"name": o.name, "type": o.type, "mode": getattr(o, "mode", "OBJECT")} for o in selected
         ],
         "selection_count": len(selected),
     }
 
+    # Inspect sub-element selection when in Edit Mode on a mesh object
+    if is_edit_mode and active and active.type == 'MESH' and active.data:
+        try:
+            active.update_from_editmode()
+        except Exception:
+            pass
+        mesh = active.data
+
+        ts = getattr(bpy.context, "tool_settings", None)
+        if not ts:
+            scene = getattr(bpy.context, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
+            ts = getattr(scene, "tool_settings", None)
+
+        sel_mode_tuple = getattr(ts, "mesh_select_mode", (True, False, False)) if ts else (True, False, False)
+        active_select_modes = []
+        if len(sel_mode_tuple) > 0 and sel_mode_tuple[0]:
+            active_select_modes.append("VERTEX")
+        if len(sel_mode_tuple) > 1 and sel_mode_tuple[1]:
+            active_select_modes.append("EDGE")
+        if len(sel_mode_tuple) > 2 and sel_mode_tuple[2]:
+            active_select_modes.append("FACE")
+
+        vert_sel = getattr(mesh, "total_vert_sel", 0)
+        edge_sel = getattr(mesh, "total_edge_sel", 0)
+        face_sel = getattr(mesh, "total_face_sel", 0)
+        has_sub_element_selection = (vert_sel > 0 or edge_sel > 0 or face_sel > 0)
+
+        # Check if selection matches the currently active mesh select mode
+        mode_has_selection = False
+        if "VERTEX" in active_select_modes and vert_sel > 0:
+            mode_has_selection = True
+        if "EDGE" in active_select_modes and edge_sel > 0:
+            mode_has_selection = True
+        if "FACE" in active_select_modes and face_sel > 0:
+            mode_has_selection = True
+
+        sub_selection = {
+            "mesh_select_mode": active_select_modes,
+            "selected_vertices": vert_sel,
+            "total_vertices": len(mesh.vertices),
+            "selected_edges": edge_sel,
+            "total_edges": len(mesh.edges),
+            "selected_faces": face_sel,
+            "total_faces": len(mesh.polygons),
+            "has_sub_element_selection": has_sub_element_selection,
+            "active_mode_has_selection": mode_has_selection,
+        }
+        result["sub_element_selection"] = sub_selection
+        if not has_sub_element_selection:
+            result["selection_warning"] = (
+                f"Active object '{active.name}' is in Edit Mode, but NO mesh elements (vertices/edges/faces) are currently selected. "
+                "Any modeling operation (extrude, bevel, inset, delete, assign material) requires selecting elements first (e.g. press 'A' to select all)."
+            )
+        elif not mode_has_selection:
+            mode_str = "/".join(active_select_modes).lower()
+            result["selection_warning"] = (
+                f"Active object '{active.name}' is in {mode_str} select mode, but 0 {mode_str} elements are selected."
+            )
+
     return result
+
+
+def get_material_details(object_name: str, slot_index: int = None, material_name: str = None) -> dict:
+    """Inspect material slots, face assignments, shader node trees, Material Output surface connections,
+    Principled BSDF parameters, and missing image textures for an object.
+
+    Returns concise structured diagnostic data.
+    """
+    obj = bpy.data.objects.get(object_name)
+    if not obj:
+        return {"error": f"Object '{object_name}' not found in scene."}
+
+    # If in Edit Mode on a mesh, flush edits so polygon.material_index is fresh
+    if getattr(obj, "mode", "") == 'EDIT' and obj.type == 'MESH' and obj.data:
+        try:
+            obj.update_from_editmode()
+        except Exception:
+            pass
+
+    slots_info = []
+    face_counts = {}
+    detected_issues = []
+
+    # Calculate face assignments per slot index if mesh
+    if obj.type == 'MESH' and obj.data:
+        for p in obj.data.polygons:
+            face_counts[p.material_index] = face_counts.get(p.material_index, 0) + 1
+
+    total_slots = len(obj.material_slots)
+
+    for idx, slot in enumerate(obj.material_slots):
+        mat = slot.material
+        faces_assigned = face_counts.get(idx, 0) if face_counts else 0
+        slot_data = {
+            "slot_index": idx,
+            "slot_name": slot.name,
+            "material_name": mat.name if mat else None,
+            "link": slot.link,
+            "assigned_faces": faces_assigned,
+        }
+        if mat is None:
+            detected_issues.append(f"Material slot {idx} is empty (no material data-block assigned).")
+        elif total_slots > 1 and faces_assigned == 0 and obj.type == 'MESH' and len(obj.data.polygons) > 0:
+            detected_issues.append(f"Material slot {idx} ('{mat.name}') is assigned to 0 faces.")
+        slots_info.append(slot_data)
+
+    if total_slots == 0:
+        detected_issues.append(f"Object '{object_name}' has no material slots.")
+
+    # Determine materials to inspect in detail
+    target_mats = []
+    if slot_index is not None:
+        if 0 <= slot_index < len(obj.material_slots):
+            s_mat = obj.material_slots[slot_index].material
+            if s_mat:
+                target_mats.append(s_mat)
+            else:
+                detected_issues.append(f"Requested slot index {slot_index} has no material assigned.")
+        else:
+            return {
+                "object_name": object_name,
+                "error": f"Slot index {slot_index} out of range (object has {len(obj.material_slots)} slots)."
+            }
+    elif material_name:
+        m = bpy.data.materials.get(material_name)
+        if m:
+            target_mats.append(m)
+        else:
+            return {
+                "object_name": object_name,
+                "error": f"Material '{material_name}' not found in blend file."
+            }
+    else:
+        # Inspect unique materials assigned to slots (cap at 4 to conserve context)
+        seen_names = set()
+        for slot in obj.material_slots:
+            if slot.material and slot.material.name not in seen_names:
+                seen_names.add(slot.material.name)
+                target_mats.append(slot.material)
+                if len(target_mats) >= 4:
+                    break
+
+    materials_detail = []
+    for mat in target_mats:
+        mat_entry = {
+            "material_name": mat.name,
+            "has_nodes": mat.node_tree is not None,
+        }
+
+        if not mat.node_tree:
+            mat_entry["note"] = "Material does not use nodes or node tree is missing."
+            materials_detail.append(mat_entry)
+            continue
+
+        nodes = mat.node_tree.nodes
+
+        # Find Material Output node
+        output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL' and getattr(n, "is_active_output", True)), None)
+        if not output_node:
+            output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
+
+        if not output_node:
+            mat_entry["output_status"] = "Missing Material Output node"
+            detected_issues.append(f"Material '{mat.name}' is missing a Material Output node.")
+        else:
+            surf_sock = output_node.inputs.get("Surface")
+            if not surf_sock or not surf_sock.is_linked:
+                mat_entry["surface_connected"] = False
+                detected_issues.append(
+                    f"Material '{mat.name}' has NO shader connected to the 'Surface' socket of '{output_node.name}'. "
+                    "The object will render pitch black or unshaded."
+                )
+            else:
+                mat_entry["surface_connected"] = True
+                link = surf_sock.links[0]
+                mat_entry["surface_shader"] = {
+                    "node_name": link.from_node.name,
+                    "node_type": link.from_node.type,
+                    "socket_name": link.from_socket.name,
+                }
+
+        # Inspect Principled BSDF node if present
+        principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        if principled:
+            bsdf_info = {}
+            # Base Color
+            bc = principled.inputs.get("Base Color")
+            if bc:
+                if bc.is_linked:
+                    bsdf_info["base_color"] = f"linked to {bc.links[0].from_node.name}.{bc.links[0].from_socket.name}"
+                else:
+                    bsdf_info["base_color"] = [round(c, 3) for c in bc.default_value[:3]]
+            # Roughness
+            r_sock = principled.inputs.get("Roughness")
+            if r_sock:
+                bsdf_info["roughness"] = f"linked to {r_sock.links[0].from_node.name}" if r_sock.is_linked else round(r_sock.default_value, 3)
+            # Metallic
+            m_sock = principled.inputs.get("Metallic")
+            if m_sock:
+                bsdf_info["metallic"] = f"linked to {m_sock.links[0].from_node.name}" if m_sock.is_linked else round(m_sock.default_value, 3)
+            # Transmission (support both v1 'Transmission' and v2 'Transmission Weight')
+            t_sock = principled.inputs.get("Transmission Weight") or principled.inputs.get("Transmission")
+            if t_sock:
+                bsdf_info["transmission"] = f"linked to {t_sock.links[0].from_node.name}" if t_sock.is_linked else round(t_sock.default_value, 3)
+            # Alpha
+            a_sock = principled.inputs.get("Alpha")
+            if a_sock:
+                bsdf_info["alpha"] = f"linked to {a_sock.links[0].from_node.name}" if a_sock.is_linked else round(a_sock.default_value, 3)
+                if not a_sock.is_linked and a_sock.default_value < 0.001:
+                    detected_issues.append(f"Material '{mat.name}' Principled BSDF Alpha is 0.0 (object may appear transparent/invisible).")
+            # Emission Strength
+            e_sock = principled.inputs.get("Emission Strength")
+            if e_sock:
+                bsdf_info["emission_strength"] = f"linked to {e_sock.links[0].from_node.name}" if e_sock.is_linked else round(e_sock.default_value, 3)
+
+            mat_entry["principled_bsdf"] = bsdf_info
+
+        # Check Image Texture nodes for missing files
+        img_nodes = [n for n in nodes if n.type == 'TEX_IMAGE']
+        if img_nodes:
+            textures_info = []
+            for img_node in img_nodes:
+                img = img_node.image
+                tex_entry = {"node_name": img_node.name}
+                if not img:
+                    tex_entry["status"] = "No image assigned"
+                    detected_issues.append(f"Image Texture node '{img_node.name}' in material '{mat.name}' has no image assigned.")
+                else:
+                    filepath = img.filepath
+                    is_packed = getattr(img, "packed_file", None) is not None
+                    abs_filepath = bpy.path.abspath(filepath) if filepath else ""
+                    file_missing = (not is_packed) and bool(filepath) and not os.path.exists(abs_filepath)
+                    tex_entry["image_name"] = img.name
+                    tex_entry["filepath"] = filepath
+                    tex_entry["is_packed"] = is_packed
+                    tex_entry["file_missing"] = file_missing
+                    if file_missing:
+                        tex_entry["status"] = "FILE MISSING (renders pink/magenta)"
+                        detected_issues.append(
+                            f"Image Texture node '{img_node.name}' in material '{mat.name}' references missing file '{filepath}'. In Blender, missing textures display as solid magenta/pink."
+                        )
+                    else:
+                        tex_entry["status"] = "OK"
+                textures_info.append(tex_entry)
+            mat_entry["image_textures"] = textures_info
+
+        materials_detail.append(mat_entry)
+
+    # Diagnostic synthesis
+    if detected_issues:
+        diag_summary = "Issues detected: " + "; ".join(detected_issues)
+    elif total_slots == 0:
+        diag_summary = f"Object '{object_name}' has no material slots or materials assigned."
+    else:
+        diag_summary = f"Object '{object_name}' has {total_slots} material slot(s) with valid assignments and connected shaders."
+
+    return {
+        "object_name": object_name,
+        "material_slots_count": total_slots,
+        "material_slots": slots_info,
+        "materials": materials_detail,
+        "detected_issues": detected_issues,
+        "diagnostic_summary": diag_summary,
+    }
 
 
 def get_active_tool_info() -> dict:
     """Return the currently active tool in the workspace."""
+    active = _get_active_object()
+    mode_str = _resolve_interaction_mode(active)
+
     result = {
         "active_tool": None,
-        "mode": bpy.context.mode,
+        "mode": mode_str,
     }
 
     try:
-        tool = bpy.context.workspace.tools.from_space_view3d_mode(
-            bpy.context.mode, create=False
-        )
-        if tool:
-            result["active_tool"] = tool.idname
+        workspace = getattr(bpy.context, "workspace", None)
+        if not workspace:
+            wm = getattr(bpy.context, "window_manager", None) or (bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None)
+            if wm and len(wm.windows) > 0:
+                workspace = wm.windows[0].workspace
+
+        if workspace:
+            tool = workspace.tools.from_space_view3d_mode(
+                mode_str, create=False
+            )
+            if tool:
+                result["active_tool"] = tool.idname
     except Exception:
         pass
 
@@ -523,9 +1487,81 @@ TOOL_REGISTRY = {
             "required": ["object_name"],
         },
     },
+    "get_modifier_details": {
+        "function": get_modifier_details,
+        "description": "Get the specific configuration parameters of a modifier on an object (e.g. Mirror axis/clip/merge, Bevel width/segments/limit, Subdivision levels, Boolean operation/solver, Array count/offset). Call this when diagnosing why a modifier is producing unexpected results, when the user asks about a modifier's settings, or when you need to verify a modifier's configuration before recommending changes. The modifier name is available from the base context or get_object_details.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "The exact name of the Blender object.",
+                },
+                "modifier_name": {
+                    "type": "string",
+                    "description": "The exact name of the modifier to inspect (as shown in the modifier list).",
+                },
+            },
+            "required": ["object_name", "modifier_name"],
+        },
+    },
+    "get_mesh_geometry_summary": {
+        "function": get_mesh_geometry_summary,
+        "description": "Get a lightweight geometry summary of a mesh object: local and world bounding boxes, local/world dimensions and centroid, whether vertices touch each axis plane (X=0, Y=0, Z=0), custom normals status, loose vertices/edges, and non-manifold edge count. Automatically flushes active Edit Mode edits. Call this when diagnosing geometry-origin problems (Mirror gaps, Screw axis issues, Spin center offset), scale issues, shading artifacts, mesh cleanup, or any issue where vertex positions relative to origin or world matter.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "The exact name of the Blender mesh object to inspect.",
+                },
+            },
+            "required": ["object_name"],
+        },
+    },
+    "get_animation_details": {
+        "function": get_animation_details,
+        "description": "Get detailed animation data for an object: active action, channel F-curves (location, rotation, scale, custom properties), keyframe positions, values, interpolation types ('CONSTANT', 'LINEAR', 'BEZIER', easing), handles, active F-curve modifiers (e.g. Stepped, Cycles, Noise), and drivers. Call this when diagnosing animation problems such as stepped/jumpy motion, unexpected speed, missing keyframes, interpolation issues, or driver evaluation problems. Optionally scope to a specific data_path like 'location' or 'rotation_euler'.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "The exact name of the Blender object to inspect.",
+                },
+                "data_path": {
+                    "type": "string",
+                    "description": "Optional: filter to a specific animated property (e.g., 'location', 'rotation_euler', 'scale'). Omit to inspect all animated channels on the object.",
+                },
+            },
+            "required": ["object_name"],
+        },
+    },
+    "get_material_details": {
+        "function": get_material_details,
+        "description": "Inspect material slots, face assignments, shader node trees, Material Output surface connections, Principled BSDF settings, and missing image textures for an object. Call this when diagnosing material or shading problems (object looks black/purple/pink, texture not showing, wrong material on faces, empty material slot, disconnected shader output).",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "object_name": {
+                    "type": "string",
+                    "description": "The exact name of the Blender object to inspect.",
+                },
+                "slot_index": {
+                    "type": "integer",
+                    "description": "Optional: index of a specific material slot to inspect (0-indexed).",
+                },
+                "material_name": {
+                    "type": "string",
+                    "description": "Optional: name of a specific material to inspect.",
+                },
+            },
+            "required": ["object_name"],
+        },
+    },
     "get_selection_info": {
         "function": get_selection_info,
-        "description": "Get the full list of currently selected objects and which one is active. Call this when the user asks about selection, parenting, joining objects, or any operation that depends on what is selected.",
+        "description": "Get the list of currently selected objects, active object, and when in Edit Mode, the active selection mode (vertex/edge/face) and selected element counts (vertices, edges, faces). Call this when the user asks about selection, parenting, joining objects, or why modeling tools (extrude, bevel, inset, delete) are not working in Edit Mode.",
         "parameters": {
             "type": "object",
             "properties": {},
@@ -578,13 +1614,13 @@ TOOL_REGISTRY = {
     },
     "evaluate_python_expression": {
         "function": evaluate_python_expression,
-        "description": "Evaluate an arbitrary Python expression using the Blender Python API (bpy) to inspect scene data that is not covered by other tools. Ensure the expression is a single valid Python expression (not statements). Do not attempt to modify the scene.",
+        "description": "Evaluate a read-only Python expression using the Blender Python API (bpy) to inspect scene data not covered by other tools. Use this to inspect modifier-specific settings, node tree connections, constraint targets, particle system parameters, armature bone data, driver expressions, or any bpy property. Must be a single expression (not statements). Must NOT modify the scene — only read properties. Examples: 'bpy.data.objects[\"Cube\"].modifiers[\"Bevel\"].angle_limit', '[n.name for n in bpy.data.materials[\"Material\"].node_tree.nodes]', 'bpy.context.scene.tool_settings.transform_pivot_point'.",
         "parameters": {
             "type": "object",
             "properties": {
                 "expression": {
                     "type": "string",
-                    "description": "The python expression to evaluate, e.g., 'bpy.context.scene.render.engine' or '[n.name for n in bpy.context.active_object.data.materials[0].node_tree.nodes]'.",
+                    "description": "A single Python expression to evaluate, e.g., 'bpy.context.scene.render.engine' or 'bpy.data.objects[\"Cube\"].modifiers[\"Mirror\"].merge_threshold'.",
                 }
             },
             "required": ["expression"]
@@ -630,7 +1666,7 @@ def execute_tool(tool_name: str, arguments: dict) -> dict:
 def get_scene_context() -> dict:
     """Legacy: Return a combined context dict (for dev tools inspector)."""
     ctx = get_basic_context()
-    obj = bpy.context.active_object
+    obj = _get_active_object()
     ctx["modifiers_on_active"] = (
         [m.type for m in obj.modifiers] if obj and hasattr(obj, "modifiers") else []
     )
