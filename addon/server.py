@@ -15,7 +15,7 @@ _last_companion_ping = 0.0
 SERVER_PORT = 8765
 
 
-def is_companion_connected(timeout: float = 3.0) -> bool:
+def is_companion_connected(timeout: float = 12.0) -> bool:
     """Return True if the browser companion has polled the server within timeout seconds."""
     global _last_companion_ping
     return (time.time() - _last_companion_ping) <= timeout
@@ -126,6 +126,11 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 act_obj = getattr(bpy.context, "active_object", None)
                 mode = getattr(bpy.context, "mode", "OBJECT")
 
+                if scene and not getattr(scene, "bm_has_connected_once", False):
+                    scene.bm_has_connected_once = True
+                if wm and not getattr(wm, "bm_has_connected_once", False):
+                    wm.bm_has_connected_once = True
+
                 chat_data = []
                 steps_data = []
                 current_step = 0
@@ -207,6 +212,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                     "remote_mic_active": remote_mic_active,
                     "remote_mic_send": remote_mic_send,
                     "remote_mic_abort": remote_mic_abort,
+                    "tts_stop": bool(getattr(scene, "bm_tts_stop", False) or (wm and getattr(wm, "bm_tts_stop", False))),
                 }
                 payload = json.dumps(data).encode("utf-8")
                 self.send_response(200)
@@ -395,6 +401,40 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             self._set_cors_headers()
             self.end_headers()
             self.wfile.write(json.dumps({"status": "stopping"}).encode("utf-8"))
+            return
+
+        # Stop speech synthesis / voice readout
+        if self.path == "/api/tts_stop":
+            def _set_tts_stop():
+                scene = getattr(bpy.context, "scene", None)
+                if scene:
+                    scene.bm_tts_stop = True
+                wm = getattr(bpy.context, "window_manager", None)
+                if wm:
+                    wm.bm_tts_stop = True
+                return None
+            bpy.app.timers.register(_set_tts_stop, first_interval=0.001)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
+            return
+
+        # Acknowledge / reset tts stop flag
+        if self.path == "/api/tts_stop_ack":
+            def _reset_tts_stop():
+                scene = getattr(bpy.context, "scene", None)
+                if scene:
+                    scene.bm_tts_stop = False
+                wm = getattr(bpy.context, "window_manager", None)
+                if wm:
+                    wm.bm_tts_stop = False
+                return None
+            bpy.app.timers.register(_reset_tts_stop, first_interval=0.001)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode("utf-8"))
             return
 
         # 4. Acknowledge / reset remote mic send flag

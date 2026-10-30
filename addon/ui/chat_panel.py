@@ -30,6 +30,12 @@ def get_thinking_icon_id():
         return pcoll["thinking"].icon_id
     return 0
 
+def get_speaker_stop_icon_id():
+    pcoll = _preview_collections.get("main")
+    if pcoll and "speaker_stop" in pcoll:
+        return pcoll["speaker_stop"].icon_id
+    return 0
+
 from ..ai_client import ask_ai
 from ..scene_reader import (
     get_basic_context_json,
@@ -731,6 +737,64 @@ class BLENDERMENTOR_OT_open_web_companion(bpy.types.Operator):
         return {'FINISHED'}
 
 
+class BLENDERMENTOR_OT_reconnect_companion(bpy.types.Operator):
+    bl_idname = "blendermentor.reconnect_companion"
+    bl_label = "Reconnect Console"
+    bl_description = "Reconnect to BlenderMentor Console in background"
+
+    def execute(self, context):
+        import webbrowser
+        from ..server import is_companion_connected
+
+        # If already connected, redraw and finish
+        if is_companion_connected(timeout=3.0):
+            self.report({'INFO'}, "BlenderMentor Console reconnected")
+            for win in bpy.context.window_manager.windows:
+                for area in win.screen.areas:
+                    if area.type == 'VIEW_3D':
+                        area.tag_redraw()
+            return {'FINISHED'}
+
+        port = 8765
+        url = f"http://127.0.0.1:{port}"
+        try:
+            # Use autoraise=False to avoid aggressively stealing focus where supported
+            webbrowser.open(url, autoraise=False)
+        except Exception as e:
+            self.report({'WARNING'}, f"Could not launch browser: {e}")
+
+        def _refresh_poll():
+            from ..server import is_companion_connected
+            if is_companion_connected(timeout=3.0):
+                for win in bpy.context.window_manager.windows:
+                    for area in win.screen.areas:
+                        if area.type == 'VIEW_3D':
+                            area.tag_redraw()
+                return None
+            return 0.5
+
+        bpy.app.timers.register(_refresh_poll, first_interval=0.5)
+        self.report({'INFO'}, "Reconnecting to BlenderMentor Console...")
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_stop_readout(bpy.types.Operator):
+    """Stop active voice readout in the browser console (Alt + M)"""
+    bl_idname = "blendermentor.stop_readout"
+    bl_label = "Stop Readout"
+    bl_description = "Stop active voice readout in the BlenderMentor Console (Alt + M)"
+
+    def execute(self, context):
+        scene = getattr(context, "scene", None) or (bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None)
+        wm = getattr(context, "window_manager", None) or (bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None)
+        if scene:
+            scene.bm_tts_stop = True
+        if wm:
+            wm.bm_tts_stop = True
+        self.report({'INFO'}, "Voice readout stopped")
+        return {'FINISHED'}
+
+
 
 
 class BLENDERMENTOR_OT_hybrid_mic(bpy.types.Operator):
@@ -1275,18 +1339,32 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         # 1. Connection Banner / Start BlenderMentor Button
         # -------------------------------------------------------------
         from ..server import is_companion_connected
-        connected = is_companion_connected(timeout=3.0)
+        connected = is_companion_connected(timeout=10.0)
 
         if not connected:
+            wm = getattr(context, "window_manager", None)
+            has_connected_once = bool(
+                getattr(scene, "bm_has_connected_once", False) or
+                (wm and getattr(wm, "bm_has_connected_once", False))
+            )
+
             start_box = layout.box()
             start_col = start_box.column(align=True)
             start_col.scale_y = 1.35
-            start_col.label(text="Console Not Connected", icon='INFO')
-            start_col.operator(
-                "blendermentor.open_web_companion",
-                text="Start BlenderMentor",
-                icon='NONE'
-            )
+            if has_connected_once:
+                start_col.label(text="Console Inactive", icon='INFO')
+                start_col.operator(
+                    "blendermentor.reconnect_companion",
+                    text="Reconnect",
+                    icon='FILE_REFRESH'
+                )
+            else:
+                start_col.label(text="Console Not Connected", icon='INFO')
+                start_col.operator(
+                    "blendermentor.open_web_companion",
+                    text="Start BlenderMentor",
+                    icon='NONE'
+                )
             layout.separator(factor=0.5)
             return
 
@@ -1392,6 +1470,13 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
             # Ask follow-up about this step
             ask_op = actions_group.operator("blendermentor.ask_step", text="", icon='QUESTION')
             ask_op.step_index = current
+
+            # Stop audio readout
+            speaker_stop_id = get_speaker_stop_icon_id()
+            if speaker_stop_id:
+                actions_group.operator("blendermentor.stop_readout", text="", icon_value=speaker_stop_id)
+            else:
+                actions_group.operator("blendermentor.stop_readout", text="", icon='MUTE_IPO_OFF')
 
             # Watch Tutorial video for this step (compact icon)
             if scene.bm_youtube_query:
@@ -1549,6 +1634,8 @@ _classes = (
     BLENDERMENTOR_OT_stop_processing,
     BLENDERMENTOR_OT_clear_chat,
     BLENDERMENTOR_OT_open_web_companion,
+    BLENDERMENTOR_OT_reconnect_companion,
+    BLENDERMENTOR_OT_stop_readout,
     BLENDERMENTOR_OT_hybrid_mic,
     BLENDERMENTOR_OT_mic_abort,
     BLENDERMENTOR_OT_step_next,
@@ -1624,6 +1711,15 @@ def register_keymaps():
     )
     _addon_keymaps.append((km, kmi_abort))
 
+    # Stop Voice Readout: Alt + M
+    kmi_mute = km.keymap_items.new(
+        "blendermentor.stop_readout",
+        type='M',
+        value='PRESS',
+        alt=True
+    )
+    _addon_keymaps.append((km, kmi_mute))
+
 
 def unregister_keymaps():
     for km, kmi in _addon_keymaps:
@@ -1641,7 +1737,7 @@ def _poll_companion_status():
     """Poll browser companion connection status and redraw 3D Viewport when state changes."""
     global _last_companion_connected
     from ..server import is_companion_connected
-    current = is_companion_connected(timeout=3.0)
+    current = is_companion_connected(timeout=10.0)
     if current != _last_companion_connected:
         _last_companion_connected = current
         try:
@@ -1671,6 +1767,9 @@ def register():
         thinking_path = os.path.join(icons_dir, "thinking.png")
         if os.path.exists(thinking_path):
             pcoll.load("thinking", thinking_path, 'IMAGE')
+        speaker_stop_path = os.path.join(icons_dir, "speaker_stop.png")
+        if os.path.exists(speaker_stop_path):
+            pcoll.load("speaker_stop", speaker_stop_path, 'IMAGE')
         _preview_collections["main"] = pcoll
     except Exception as e:
         print(f"[BlenderMentor] Warning: Could not load preview collection: {e}")

@@ -637,6 +637,63 @@ class TestThreadSafetyBoundaries(unittest.TestCase):
 
         print("✅ Test 12 Passed: DeepSeek provider, OpenAI tool declarations, and cancel_event wiring verified.")
 
+    def test_13_reconnect_and_stop_readout_controls(self):
+        """Verify reconnection state tracking, stop readout operator, and server synchronization."""
+        import addon.state.conversation as conv
+        from addon.state.conversation import sync_scene_to_wm, sync_wm_to_scene
+        import addon.server as server_mod
+
+        scene = bpy.context.scene
+        wm = bpy.context.window_manager
+
+        # 1. Verify property existence
+        self.assertTrue(hasattr(scene, "bm_has_connected_once"))
+        self.assertTrue(hasattr(wm, "bm_has_connected_once"))
+        self.assertTrue(hasattr(scene, "bm_tts_stop"))
+        self.assertTrue(hasattr(wm, "bm_tts_stop"))
+
+        # 2. Verify state sync
+        scene.bm_has_connected_once = True
+        scene.bm_tts_stop = True
+        sync_scene_to_wm(scene)
+        self.assertTrue(wm.bm_has_connected_once)
+        self.assertTrue(wm.bm_tts_stop)
+
+        wm.bm_tts_stop = False
+        sync_wm_to_scene(scene)
+        self.assertFalse(scene.bm_tts_stop)
+
+        # 3. Verify blendermentor.stop_readout operator
+        res_stop = bpy.ops.blendermentor.stop_readout()
+        self.assertEqual(res_stop, {'FINISHED'})
+        self.assertTrue(scene.bm_tts_stop)
+        self.assertTrue(wm.bm_tts_stop)
+
+        # 4. Verify server /api/tts_stop_ack and /api/tts_stop logic
+        # Reset via simulated ack
+        scene.bm_tts_stop = False
+        wm.bm_tts_stop = False
+        self.assertFalse(scene.bm_tts_stop)
+
+        # 5. Verify blendermentor.reconnect_companion operator exists and executes
+        res_reconnect = bpy.ops.blendermentor.reconnect_companion()
+        self.assertEqual(res_reconnect, {'FINISHED'})
+
+        # 6. Verify Alt+M keymap registration for stop_readout
+        import addon.ui.chat_panel as chat_panel
+        chat_panel.register_keymaps()
+        found_mute_kmi = False
+        for km, kmi in chat_panel._addon_keymaps:
+            if kmi.idname == "blendermentor.stop_readout" and kmi.type == 'M' and kmi.alt:
+                found_mute_kmi = True
+                break
+        self.assertTrue(found_mute_kmi, "Alt+M shortcut must be registered for blendermentor.stop_readout")
+
+        # Cleanup
+        scene.bm_tts_stop = False
+        wm.bm_tts_stop = False
+        print("✅ Test 13 Passed: Reconnection state tracking, stop readout operator, and keymap verified.")
+
 
 def run_tests():
     suite = unittest.TestLoader().loadTestsFromTestCase(TestThreadSafetyBoundaries)

@@ -97,6 +97,8 @@ def sync_scene_to_wm(scene=None):
         wm.bm_remote_mic_active = scene.bm_remote_mic_active
         wm.bm_remote_mic_send = scene.bm_remote_mic_send
         wm.bm_remote_mic_abort = scene.bm_remote_mic_abort
+        wm.bm_has_connected_once = getattr(scene, "bm_has_connected_once", False) or getattr(wm, "bm_has_connected_once", False)
+        wm.bm_tts_stop = getattr(scene, "bm_tts_stop", False)
     finally:
         _is_syncing = False
 
@@ -159,6 +161,8 @@ def sync_wm_to_scene(scene=None):
         scene.bm_remote_mic_active = wm.bm_remote_mic_active
         scene.bm_remote_mic_send = wm.bm_remote_mic_send
         scene.bm_remote_mic_abort = wm.bm_remote_mic_abort
+        scene.bm_has_connected_once = getattr(wm, "bm_has_connected_once", False) or getattr(scene, "bm_has_connected_once", False)
+        scene.bm_tts_stop = getattr(wm, "bm_tts_stop", False)
     finally:
         _suppress_message_update = False
         _is_syncing = False
@@ -268,6 +272,14 @@ def register_properties():
         name="Remote Mic Abort", default=False,
         description="Flag signaling browser to cancel/abort dictation without sending (Alt + Down Arrow)"
     )
+    bpy.types.WindowManager.bm_has_connected_once = bpy.props.BoolProperty(
+        name="Has Connected Once", default=False,
+        description="True if companion was connected at least once in this session"
+    )
+    bpy.types.WindowManager.bm_tts_stop = bpy.props.BoolProperty(
+        name="Stop TTS", default=False,
+        description="Flag signaling browser to stop speech synthesis readout"
+    )
 
     # 2. Register on Scene (persists with file, supports N-Panel layouts)
     bpy.types.Scene.bm_chat_history = bpy.props.CollectionProperty(type=ChatMessage)
@@ -314,6 +326,14 @@ def register_properties():
         name="Remote Mic Abort", default=False,
         description="Flag signaling browser to cancel/abort dictation without sending (Alt + Down Arrow)"
     )
+    bpy.types.Scene.bm_has_connected_once = bpy.props.BoolProperty(
+        name="Has Connected Once", default=False,
+        description="True if companion was connected at least once in this session"
+    )
+    bpy.types.Scene.bm_tts_stop = bpy.props.BoolProperty(
+        name="Stop TTS", default=False,
+        description="Flag signaling browser to stop speech synthesis readout"
+    )
 
     # Handlers for undo preservation and file load
     if on_undo_post not in bpy.app.handlers.undo_post:
@@ -330,6 +350,8 @@ def unregister_properties():
 
     props = [
         "bm_remote_mic_abort",
+        "bm_has_connected_once",
+        "bm_tts_stop",
         "bm_remote_mic_send",
         "bm_remote_mic_active",
         "bm_youtube_query",
