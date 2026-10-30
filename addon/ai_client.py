@@ -13,7 +13,7 @@ import urllib.request
 import urllib.error
 from datetime import datetime
 
-from .scene_reader import TOOL_REGISTRY, execute_tool
+from .scene_reader import TOOL_REGISTRY, execute_tool, _make_cache_key
 from .logger import log_api_exchange
 
 # ---------------------------------------------------------------------------
@@ -21,6 +21,66 @@ from .logger import log_api_exchange
 # ---------------------------------------------------------------------------
 
 MAX_TOOL_ROUNDS = 8   # safety cap — prevent infinite loops
+MAX_TOOL_RETRIES = 2  # max consecutive failures for the same tool signature before blocking
+
+
+# ---------------------------------------------------------------------------
+# Tool Execution & Loop Tracker
+# ---------------------------------------------------------------------------
+
+class _ToolTracker:
+    """Tracks per-turn tool calls, duplicate invocations, and consecutive failures."""
+
+    def __init__(self, max_retries: int = MAX_TOOL_RETRIES):
+        self.max_retries = max_retries
+        self.successful_calls = set()
+        self.failure_counts = {}
+        self.consecutive_dup_rounds = 0
+
+    def check_round_duplicates(self, round_keys: list) -> bool:
+        """
+        Check if all tool calls in the upcoming round are previously successful duplicates.
+        Increments or resets the consecutive duplicate round counter.
+        Returns True if consecutive duplicate rounds reach or exceed 2.
+        """
+        is_all_dup = bool(round_keys and all(k in self.successful_calls for k in round_keys))
+        if is_all_dup:
+            self.consecutive_dup_rounds += 1
+        else:
+            self.consecutive_dup_rounds = 0
+        return self.consecutive_dup_rounds >= 2
+
+    def execute_or_block(self, tool_name: str, tool_args: dict, execute_fn) -> dict:
+        """
+        Execute tool via execute_fn or block if consecutive failure limit reached.
+        Annotates previously successful calls with a duplicate notice.
+        """
+        k = _make_cache_key(tool_name, tool_args)
+        if self.failure_counts.get(k, 0) >= self.max_retries:
+            return {
+                "error": (
+                    f"Tool '{tool_name}' failed {self.failure_counts[k]} times consecutively in this turn. "
+                    "Retry limit reached; further attempts for this signature are blocked. "
+                    "Please synthesize your guidance with the available information."
+                )
+            }
+
+        result = execute_fn()
+        is_success = isinstance(result, dict) and "error" not in result
+        if is_success:
+            self.failure_counts[k] = 0
+            if k in self.successful_calls:
+                result = dict(result)
+                result["_notice"] = (
+                    f"Notice: '{tool_name}' was already called with these arguments earlier in this turn. "
+                    "Scene data is read-only and unchanged. Please synthesize your final response now."
+                )
+            else:
+                self.successful_calls.add(k)
+        else:
+            self.failure_counts[k] = self.failure_counts.get(k, 0) + 1
+
+        return result
 
 # ---------------------------------------------------------------------------
 # System prompt — enforces structured JSON from the AI
@@ -308,12 +368,35 @@ def _build_ollama_tools(allow_python_eval: bool, enable_web_search: bool) -> lis
     return tools
 
 
+def _build_deepseek_tools(allow_python_eval: bool, enable_web_search: bool) -> list:
+    """Build the DeepSeek OpenAI-compatible tool declarations from TOOL_REGISTRY."""
+    _WEB_TOOLS = {"search_blender_community", "fetch_blender_docs"}
+
+    tools = []
+    for name, entry in TOOL_REGISTRY.items():
+        if name == "evaluate_python_expression" and not allow_python_eval:
+            continue
+        if name in _WEB_TOOLS and not enable_web_search:
+            continue
+        tool = {
+            "type": "function",
+            "function": {
+                "name": name,
+                "description": entry["description"],
+                "parameters": entry["parameters"],
+            },
+        }
+        tools.append(tool)
+    return tools
+
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
 def ask_ai(prefs, basic_context_json: str, user_message: str,
-           status_callback=None) -> dict:
+           status_callback=None, snapshot=None, turn_id=None,
+           cancel_event=None) -> dict:
     """
     Send *user_message* (with minimal scene context) to the configured AI
     provider.  The AI may call tools to fetch additional context.
@@ -325,10 +408,16 @@ def ask_ai(prefs, basic_context_json: str, user_message: str,
         status_callback:    Optional callable(str) invoked with status
                             messages like "Thinking...", "Fetching render
                             settings..."  Called from the worker thread.
+        snapshot:           Optional pre-collected scene snapshot dictionary
+        turn_id:            Optional conversation turn correlation ID
+        cancel_event:       Optional threading.Event to signal cancellation
 
     Returns the parsed JSON dict (with a "steps" key) on success.
-    Raises on network / parsing errors.
+    Raises on network / parsing errors or InterruptedError if cancelled.
     """
+    if cancel_event is not None and cancel_event.is_set():
+        raise InterruptedError("AI processing stopped by user.")
+
     import bpy
     if hasattr(bpy.app, "online_access") and not bpy.app.online_access:
         raise RuntimeError("Internet access is disabled in Blender's System Preferences (Allow Internet Access).")
@@ -361,11 +450,13 @@ def ask_ai(prefs, basic_context_json: str, user_message: str,
 
     try:
         if provider == 'GEMINI':
-            raw = _gemini_tool_loop(prefs, basic_context_json, user_message, _status, session=session)
+            raw = _gemini_tool_loop(prefs, basic_context_json, user_message, _status, session=session, snapshot=snapshot, cancel_event=cancel_event)
         elif provider == 'CLAUDE':
-            raw = _claude_tool_loop(prefs, basic_context_json, user_message, _status, session=session)
+            raw = _claude_tool_loop(prefs, basic_context_json, user_message, _status, session=session, snapshot=snapshot, cancel_event=cancel_event)
+        elif provider == 'DEEPSEEK':
+            raw = _deepseek_tool_loop(prefs, basic_context_json, user_message, _status, session=session, snapshot=snapshot, cancel_event=cancel_event)
         elif provider == 'OLLAMA':
-            raw = _ollama_tool_loop(prefs, basic_context_json, user_message, _status, session=session)
+            raw = _ollama_tool_loop(prefs, basic_context_json, user_message, _status, session=session, snapshot=snapshot, cancel_event=cancel_event)
         else:
             raise ValueError(f"Unknown provider: {provider}")
 
@@ -380,6 +471,9 @@ def ask_ai(prefs, basic_context_json: str, user_message: str,
             session["error"] = str(e)
             log_api_exchange(session)
         raise
+
+    if cancel_event is not None and cancel_event.is_set():
+        raise InterruptedError("AI processing stopped by user.")
 
     _status("Processing response...")
     return _parse_response(raw)
@@ -396,7 +490,8 @@ def list_models(provider: str, api_key: str) -> list:
 # ---------------------------------------------------------------------------
 
 def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
-                      status_cb, session: dict = None) -> str:
+                      status_cb, session: dict = None, snapshot: dict = None,
+                      cancel_event=None) -> str:
     """Run the Gemini generateContent loop with tool calling."""
     ctx = ssl.create_default_context()
     url = (
@@ -413,7 +508,12 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         {"role": "user", "parts": [{"text": f"Scene context:\n{base_ctx}\n\nUser question:\n{prompt}"}]},
     ]
 
+    tracker = _ToolTracker()
+
     for round_num in range(MAX_TOOL_ROUNDS):
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
         body = json.dumps({
             "systemInstruction": {"parts": [{"text": SYSTEM_PROMPT}]},
             "contents": contents,
@@ -436,6 +536,9 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
             print(f"[BlenderMentor] Gemini API HTTP {e.code} error: {err_body}")
             raise RuntimeError(f"Gemini API Error ({e.code}): {err_body}")
 
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
         # Extract model response parts
         try:
             candidate = data["candidates"][0]["content"]
@@ -457,28 +560,32 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         # Append model response to conversation
         contents.append({"role": "model", "parts": parts})
 
+        round_keys = [_make_cache_key(p["functionCall"]["name"], p["functionCall"].get("args", {})) for p in function_calls]
+        should_break = tracker.check_round_duplicates(round_keys)
+
         # Execute each tool call and build function responses
         func_response_parts = []
         round_log = {"round": round_num + 1, "tool_calls": []} if session is not None else None
 
         for fc_part in function_calls:
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError("AI processing stopped by user.")
             fc = fc_part["functionCall"]
             tool_name = fc["name"]
             tool_args = fc.get("args", {})
             call_id = fc.get("id")
 
-            # Update status
-            friendly = tool_name.replace("get_", "").replace("_", " ").title()
-            # Friendlier status for web tools
-            if tool_name == "search_blender_community":
-                status_cb("Searching community Q&A...")
-            elif tool_name == "fetch_blender_docs":
-                status_cb("Fetching Blender docs...")
-            else:
-                status_cb(f"Checking {friendly}...")
+            def _exec(name=tool_name, args=tool_args):
+                friendly = name.replace("get_", "").replace("_", " ").title()
+                if name == "search_blender_community":
+                    status_cb("Searching community Q&A...")
+                elif name == "fetch_blender_docs":
+                    status_cb("Fetching Blender docs...")
+                else:
+                    status_cb(f"Checking {friendly}...")
+                return execute_tool(name, args, snapshot=snapshot)
 
-            # Execute the tool
-            result = execute_tool(tool_name, tool_args)
+            result = tracker.execute_or_block(tool_name, tool_args, _exec)
 
             if round_log is not None:
                 round_log["tool_calls"].append({
@@ -504,9 +611,15 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         # Append tool results to conversation
         contents.append({"role": "function", "parts": func_response_parts})
 
+        if should_break:
+            print(f"[BlenderMentor] Repetitive tool loop detected in round {round_num + 1}. Breaking to final synthesis.")
+            break
+
     # Graceful synthesis fallback: force final text response without tools
     fallback_err = None
     try:
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
         status_cb("Finalizing guidance...")
         # In Gemini API, the function response turn must be answered by model next.
         # Calling without tools forces Gemini to output model text!
@@ -540,6 +653,8 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
         if text_parts:
             return "".join(text_parts)
     except Exception as e:
+        if isinstance(e, InterruptedError):
+            raise
         fallback_err = fallback_err or e
         print(f"[BlenderMentor] Gemini fallback synthesis error: {e}")
 
@@ -552,7 +667,8 @@ def _gemini_tool_loop(prefs, base_ctx: str, prompt: str,
 # ---------------------------------------------------------------------------
 
 def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
-                      status_cb, session: dict = None) -> str:
+                      status_cb, session: dict = None, snapshot: dict = None,
+                      cancel_event=None) -> str:
     """Run the Claude messages loop with tool calling."""
     ctx = ssl.create_default_context()
     url = "https://api.anthropic.com/v1/messages"
@@ -565,7 +681,12 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
         {"role": "user", "content": f"Scene context:\n{base_ctx}\n\nUser question:\n{prompt}"},
     ]
 
+    tracker = _ToolTracker()
+
     for round_num in range(MAX_TOOL_ROUNDS):
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
         body = json.dumps({
             "model": prefs.get_selected_model_id(),
             "max_tokens": 8192,
@@ -593,6 +714,9 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
             except Exception:
                 raise RuntimeError(f"Claude API Error ({e.code}): {err_body}")
 
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
         stop_reason = data.get("stop_reason", "")
         content_blocks = data.get("content", [])
 
@@ -609,28 +733,32 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
         # Append assistant message (with tool_use blocks)
         messages.append({"role": "assistant", "content": content_blocks})
 
+        tool_blocks = [b for b in content_blocks if b.get("type") == "tool_use"]
+        round_keys = [_make_cache_key(b["name"], b.get("input", {})) for b in tool_blocks]
+        should_break = tracker.check_round_duplicates(round_keys)
+
         # Execute each tool call
         tool_results = []
         round_log = {"round": round_num + 1, "tool_calls": []} if session is not None else None
 
-        for block in content_blocks:
-            if block.get("type") != "tool_use":
-                continue
-
+        for block in tool_blocks:
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError("AI processing stopped by user.")
             tool_name = block["name"]
             tool_args = block.get("input", {})
             tool_id = block["id"]
 
-            # Update status
-            friendly = tool_name.replace("get_", "").replace("_", " ").title()
-            if tool_name == "search_blender_community":
-                status_cb("Searching community Q&A...")
-            elif tool_name == "fetch_blender_docs":
-                status_cb("Fetching Blender docs...")
-            else:
-                status_cb(f"Checking {friendly}...")
+            def _exec(name=tool_name, args=tool_args):
+                friendly = name.replace("get_", "").replace("_", " ").title()
+                if name == "search_blender_community":
+                    status_cb("Searching community Q&A...")
+                elif name == "fetch_blender_docs":
+                    status_cb("Fetching Blender docs...")
+                else:
+                    status_cb(f"Checking {friendly}...")
+                return execute_tool(name, args, snapshot=snapshot)
 
-            result = execute_tool(tool_name, tool_args)
+            result = tracker.execute_or_block(tool_name, tool_args, _exec)
 
             if round_log is not None:
                 round_log["tool_calls"].append({
@@ -657,9 +785,16 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
                 "content": [{"type": "text", "text": "Please continue with the gathered information."}]
             })
 
+        # Break early to graceful synthesis if model gets stuck in consecutive duplicate rounds
+        if should_break:
+            print(f"[BlenderMentor] Repetitive tool loop detected in round {round_num + 1}. Breaking to final synthesis.")
+            break
+
     # Graceful synthesis fallback: force final text response without tools
     fallback_err = None
     try:
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
         status_cb("Finalizing guidance...")
         # In Anthropic API, roles must strictly alternate: append text to the EXISTING user turn
         instruction_block = {
@@ -729,6 +864,8 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
         if text_parts:
             return "".join(text_parts)
     except Exception as e:
+        if isinstance(e, InterruptedError):
+            raise
         fallback_err = fallback_err or e
         print(f"[BlenderMentor] Claude fallback synthesis error: {e}")
 
@@ -741,7 +878,8 @@ def _claude_tool_loop(prefs, base_ctx: str, prompt: str,
 # ---------------------------------------------------------------------------
 
 def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
-                      status_cb, session: dict = None) -> str:
+                      status_cb, session: dict = None, snapshot: dict = None,
+                      cancel_event=None) -> str:
     """Run the Ollama chat loop with tool calling."""
     host = getattr(prefs, 'ollama_host', 'http://localhost:11434').rstrip("/")
     url = f"{host}/api/chat"
@@ -756,7 +894,12 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
         {"role": "user", "content": f"Scene context:\n{base_ctx}\n\nUser question:\n{prompt}"},
     ]
 
+    tracker = _ToolTracker()
+
     for round_num in range(MAX_TOOL_ROUNDS):
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
         body = json.dumps({
             "model": model_id,
             "messages": messages,
@@ -781,6 +924,9 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
                 f"Cannot reach Ollama at {host}. Is Ollama running? ({e.reason})"
             )
 
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
         msg = data.get("message", {})
         tool_calls = msg.get("tool_calls", [])
 
@@ -794,24 +940,30 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
         # Append assistant message to conversation
         messages.append(msg)
 
+        round_keys = [_make_cache_key(tc.get("function", {}).get("name", ""), tc.get("function", {}).get("arguments", {})) for tc in tool_calls]
+        should_break = tracker.check_round_duplicates(round_keys)
+
         # Execute each tool call
         round_log = {"round": round_num + 1, "tool_calls": []} if session is not None else None
 
         for tc in tool_calls:
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError("AI processing stopped by user.")
             func = tc.get("function", {})
             tool_name = func.get("name", "")
             tool_args = func.get("arguments", {})
 
-            # Update status
-            friendly = tool_name.replace("get_", "").replace("_", " ").title()
-            if tool_name == "search_blender_community":
-                status_cb("Searching community Q&A...")
-            elif tool_name == "fetch_blender_docs":
-                status_cb("Fetching Blender docs...")
-            else:
-                status_cb(f"Checking {friendly}...")
+            def _exec(name=tool_name, args=tool_args):
+                friendly = name.replace("get_", "").replace("_", " ").title()
+                if name == "search_blender_community":
+                    status_cb("Searching community Q&A...")
+                elif name == "fetch_blender_docs":
+                    status_cb("Fetching Blender docs...")
+                else:
+                    status_cb(f"Checking {friendly}...")
+                return execute_tool(name, args, snapshot=snapshot)
 
-            result = execute_tool(tool_name, tool_args)
+            result = tracker.execute_or_block(tool_name, tool_args, _exec)
 
             if round_log is not None:
                 round_log["tool_calls"].append({
@@ -829,8 +981,14 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
         if session is not None and round_log is not None:
             session["rounds"].append(round_log)
 
+        if should_break:
+            print(f"[BlenderMentor] Repetitive tool loop detected in round {round_num + 1}. Breaking to final synthesis.")
+            break
+
     # Graceful synthesis fallback: force final text response without tools
     try:
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
         status_cb("Finalizing guidance...")
         messages.append({
             "role": "user",
@@ -853,11 +1011,208 @@ def _ollama_tool_loop(prefs, base_ctx: str, prompt: str,
         if content:
             return content
     except Exception as e:
+        if isinstance(e, InterruptedError):
+            raise
         fallback_err = e
         print(f"[BlenderMentor] Ollama fallback synthesis error: {e}")
 
     err_detail = f": {fallback_err}" if fallback_err else ""
     raise RuntimeError(f"AI was unable to complete guidance within the allowed tool rounds{err_detail}.")
+
+
+# ---------------------------------------------------------------------------
+# DeepSeek — tool-calling loop (OpenAI-compatible)
+# ---------------------------------------------------------------------------
+
+def _deepseek_tool_loop(prefs, base_ctx: str, prompt: str,
+                        status_cb, session: dict = None, snapshot: dict = None,
+                        cancel_event=None) -> str:
+    """Run the DeepSeek chat loop with OpenAI-compatible tool calling."""
+    ctx = ssl.create_default_context()
+    url = "https://api.deepseek.com/chat/completions"
+    model_id = prefs.get_selected_model_id() or "deepseek-chat"
+
+    allow_python_eval = getattr(prefs, 'allow_python_eval', False)
+    enable_web_search = getattr(prefs, 'enable_web_search', True)
+
+    # Reasoner models (R1) on DeepSeek API do not support function calling; only chat models (V3) do
+    tools = _build_deepseek_tools(allow_python_eval, enable_web_search) if not model_id.endswith("reasoner") else None
+
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": f"Scene context:\n{base_ctx}\n\nUser question:\n{prompt}"},
+    ]
+
+    tracker = _ToolTracker()
+
+    for round_num in range(MAX_TOOL_ROUNDS):
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
+        req_body = {
+            "model": model_id,
+            "messages": messages,
+            "max_tokens": 8192,
+        }
+        if tools:
+            req_body["tools"] = tools
+
+        body = json.dumps(req_body).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=body,
+            headers={
+                "Authorization": f"Bearer {prefs.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode("utf-8")
+            print(f"[BlenderMentor] DeepSeek API HTTP {e.code} error: {err_body}")
+            try:
+                err_json = json.loads(err_body)
+                msg = err_json.get("error", {}).get("message", err_body)
+                raise RuntimeError(f"DeepSeek API Error ({e.code}): {msg}")
+            except Exception:
+                raise RuntimeError(f"DeepSeek API Error ({e.code}): {err_body}")
+
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
+        choices = data.get("choices", [])
+        if not choices:
+            raise RuntimeError("DeepSeek returned empty choices.")
+
+        msg = choices[0].get("message", {})
+        tool_calls = msg.get("tool_calls", [])
+
+        if not tool_calls:
+            # Final response — return text content
+            content = msg.get("content", "")
+            if content:
+                return content
+            raise RuntimeError("DeepSeek returned empty response with no tool calls.")
+
+        # Append assistant message to conversation
+        messages.append(msg)
+
+        # Build round keys for duplicate checks
+        round_keys = []
+        for tc in tool_calls:
+            func = tc.get("function", {})
+            t_name = func.get("name", "")
+            t_args_raw = func.get("arguments", {})
+            if isinstance(t_args_raw, str):
+                try:
+                    t_args = json.loads(t_args_raw) if t_args_raw else {}
+                except Exception:
+                    t_args = {}
+            else:
+                t_args = t_args_raw or {}
+            round_keys.append(_make_cache_key(t_name, t_args))
+
+        should_break = tracker.check_round_duplicates(round_keys)
+
+        # Execute each tool call
+        round_log = {"round": round_num + 1, "tool_calls": []} if session is not None else None
+
+        for tc in tool_calls:
+            if cancel_event is not None and cancel_event.is_set():
+                raise InterruptedError("AI processing stopped by user.")
+
+            call_id = tc.get("id")
+            func = tc.get("function", {})
+            tool_name = func.get("name", "")
+            tool_args_raw = func.get("arguments", {})
+            if isinstance(tool_args_raw, str):
+                try:
+                    tool_args = json.loads(tool_args_raw) if tool_args_raw else {}
+                except Exception:
+                    tool_args = {}
+            else:
+                tool_args = tool_args_raw or {}
+
+            def _exec(name=tool_name, args=tool_args):
+                friendly = name.replace("get_", "").replace("_", " ").title()
+                if name == "search_blender_community":
+                    status_cb("Searching community Q&A...")
+                elif name == "fetch_blender_docs":
+                    status_cb("Fetching Blender docs...")
+                else:
+                    status_cb(f"Checking {friendly}...")
+                return execute_tool(name, args, snapshot=snapshot)
+
+            result = tracker.execute_or_block(tool_name, tool_args, _exec)
+
+            if round_log is not None:
+                round_log["tool_calls"].append({
+                    "name": tool_name,
+                    "args": tool_args,
+                    "result": result,
+                })
+
+            tool_msg = {
+                "role": "tool",
+                "content": json.dumps(result),
+            }
+            if call_id:
+                tool_msg["tool_call_id"] = call_id
+            messages.append(tool_msg)
+
+        if session is not None and round_log is not None:
+            session["rounds"].append(round_log)
+
+        if should_break:
+            print(f"[BlenderMentor] Repetitive tool loop detected in round {round_num + 1}. Breaking to final synthesis.")
+            break
+
+    # Graceful synthesis fallback: force final text response without tools
+    fallback_err = None
+    try:
+        if cancel_event is not None and cancel_event.is_set():
+            raise InterruptedError("AI processing stopped by user.")
+
+        status_cb("Finalizing guidance...")
+        messages.append({
+            "role": "user",
+            "content": "You have gathered all needed information. Please synthesize your final response now as a valid JSON object matching the required schema. Do not call any further tools."
+        })
+        body = json.dumps({
+            "model": model_id,
+            "messages": messages,
+            "max_tokens": 8192,
+        }).encode("utf-8")
+
+        req = urllib.request.Request(
+            url, data=body,
+            headers={
+                "Authorization": f"Bearer {prefs.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60, context=ctx) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+
+        choices = data.get("choices", [])
+        if choices:
+            content = choices[0].get("message", {}).get("content", "")
+            if content:
+                return content
+    except Exception as e:
+        if isinstance(e, InterruptedError):
+            raise
+        fallback_err = e
+        print(f"[BlenderMentor] DeepSeek fallback synthesis error: {e}")
+
+    err_msg = f"DeepSeek tool loop exceeded {MAX_TOOL_ROUNDS} rounds without final JSON answer."
+    if fallback_err:
+        err_msg += f" Fallback synthesis also failed: {fallback_err}"
+    raise RuntimeError(err_msg)
 
 
 # ---------------------------------------------------------------------------

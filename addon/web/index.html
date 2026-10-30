@@ -600,56 +600,96 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     .steps-container {
       flex: 1;
       overflow-y: auto;
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .step-hero {
-      background-color: var(--bg-card-active);
-      border: 1px solid var(--border-focus);
-      border-radius: var(--radius);
-      padding: 14px;
-      margin-bottom: 2px;
+      padding: 12px 12px 50vh 12px;
       display: flex;
       flex-direction: column;
       gap: 10px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      scroll-behavior: smooth;
     }
 
-    .step-hero-header {
+    /* Step Card List: Rounded rectangle items separated by small gaps */
+    .step-card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: background 0.2s ease, border-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease;
+      scroll-margin-top: 12px;
+    }
+
+    .step-card:hover {
+      background-color: #383838;
+      border-color: #666666;
+    }
+
+    .step-card.active {
+      background-color: var(--bg-card-active);
+      border: 1px solid var(--border-focus);
+      border-left: 4px solid var(--accent);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.38);
+      padding: 14px;
+      gap: 10px;
+      cursor: default;
+    }
+
+    .step-card-top {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-dim);
+    }
+
+    .step-card.active .step-card-top {
       font-size: 11.5px;
       font-weight: 700;
-      color: var(--text-dim);
+      color: #ffd8a8;
       text-transform: uppercase;
       letter-spacing: 0.5px;
     }
 
-    .step-hero-instruction {
-      font-size: 15.5px;
-      font-weight: 600;
-      line-height: 1.4;
-      display: flex;
-      align-items: flex-start;
-      gap: 8px;
+    .step-check-icon {
+      color: #81c784;
+      display: inline-flex;
+      align-items: center;
+      margin-right: 5px;
     }
 
-    .step-hero-desc {
+    .step-check-icon svg {
+      width: 13px;
+      height: 13px;
+      fill: currentColor;
+    }
+
+    .step-card-reasoning {
       font-size: 13px;
       line-height: 1.5;
       color: #e0e0e0;
-      background: rgba(0, 0, 0, 0.25);
+      background: rgba(0, 0, 0, 0.28);
       border-left: 3px solid var(--accent);
-      padding: 8px 12px;
+      padding: 9px 12px;
       border-radius: var(--radius-sm);
-      margin-top: 2px;
+      margin-top: 4px;
+      animation: expandReasoning 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
-    .step-hero-desc strong {
+    @keyframes expandReasoning {
+      0% {
+        opacity: 0;
+        transform: translateY(-6px);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .step-card-reasoning strong {
       color: #ffd8a8;
       font-size: 11px;
       text-transform: uppercase;
@@ -658,8 +698,8 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       margin-bottom: 3px;
     }
 
-    .step-hero-completion {
-      margin-top: 8px;
+    .step-card-completion {
+      margin-top: 6px;
       padding: 10px 12px;
       background: linear-gradient(135deg, rgba(76, 175, 80, 0.14), rgba(234, 118, 0, 0.08));
       border: 1px solid rgba(76, 175, 80, 0.35);
@@ -670,41 +710,13 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       font-size: 13px;
       color: #c8e6c9;
       line-height: 1.4;
+      animation: expandReasoning 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
 
-    .step-hero-completion strong {
+    .step-card-completion strong {
       color: #81c784;
       display: inline-block;
       margin-right: 4px;
-    }
-
-    .step-card-completion {
-      margin-top: 6px;
-      padding: 6px 10px;
-      background-color: rgba(76, 175, 80, 0.1);
-      border: 1px solid rgba(76, 175, 80, 0.25);
-      border-radius: var(--radius-sm);
-      font-size: 12px;
-      color: #a5d6a7;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .step-card-reasoning {
-      font-size: 12.5px;
-      line-height: 1.45;
-      color: #949494;
-      padding-left: 36px;
-      margin-top: 2px;
-    }
-
-    .step-card:hover .step-card-reasoning {
-      color: #b5b5b5;
-    }
-
-    .step-card.active .step-card-reasoning {
-      color: #d8d8d8;
     }
 
     .step-tag {
@@ -718,72 +730,6 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       font-size: 12px;
       color: #bbbbbb;
       font-family: monospace;
-    }
-
-    /* Grouped Subsequent Steps Container */
-    .subsequent-steps-box {
-      background-color: rgba(0, 0, 0, 0.15);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      border-radius: var(--radius);
-      padding: 10px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .subsequent-steps-header {
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-      color: var(--text-dim);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 0 2px 2px 2px;
-    }
-
-    .subsequent-steps-list {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    /* Step Card List: Rounded rectangle items separated by small gaps */
-    .step-card {
-      background-color: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 9px 12px;
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      gap: 5px;
-      transition: background 0.15s, border-color 0.15s, transform 0.1s;
-    }
-
-    .step-card:hover {
-      background-color: #383838;
-      border-color: #666666;
-    }
-
-    .step-card.active {
-      border-color: #555555;
-      background-color: #383838;
-      border-left: 3px solid var(--accent);
-    }
-
-    .step-card-top {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-dim);
-    }
-
-    .step-card.active .step-card-top {
-      color: var(--text-main);
     }
 
     .step-actions {
@@ -901,12 +847,26 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     .step-card-instruction {
-      font-size: 14px;
+      font-size: 13.5px;
       font-weight: 500;
       display: flex;
-      align-items: flex-start;
+      align-items: center;
       gap: 10px;
       line-height: 1.4;
+      color: #cccccc;
+    }
+
+    .step-card.active .step-card-instruction {
+      font-size: 15.5px;
+      font-weight: 600;
+      align-items: flex-start;
+      line-height: 1.4;
+      gap: 12px;
+      color: #ffffff;
+    }
+
+    .step-card.active .step-card-instruction span {
+      padding-top: 3px;
     }
 
     .blender-icon-svg {
@@ -919,24 +879,95 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       border: 1px solid rgba(255, 255, 255, 0.16);
       border-radius: 6px;
       flex-shrink: 0;
-      margin-top: 1px;
-      transition: transform 0.15s, background-color 0.15s, border-color 0.15s;
+      transition: width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  height 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  border-radius 0.3s ease,
+                  transform 0.25s ease,
+                  background 0.25s ease,
+                  border-color 0.25s ease,
+                  box-shadow 0.25s ease;
     }
 
     .blender-icon-svg svg {
       width: 18px;
       height: 18px;
       display: block;
+      transition: width 0.3s cubic-bezier(0.34, 1.56, 0.64, 1),
+                  height 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
     }
 
     .step-card:hover .blender-icon-svg {
       background-color: rgba(255, 255, 255, 0.14);
-      transform: scale(1.05);
+      transform: scale(1.06);
     }
 
     .step-card.active .blender-icon-svg {
-      border-color: var(--border-focus);
-      background-color: rgba(255, 255, 255, 0.12);
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(234, 118, 0, 0.24), rgba(255, 255, 255, 0.1));
+      border: 1.5px solid var(--accent);
+      box-shadow: 0 4px 12px rgba(234, 118, 0, 0.28);
+      transform: scale(1);
+      animation: iconGrowProminent 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .step-card.active .blender-icon-svg svg {
+      width: 28px;
+      height: 28px;
+      animation: iconSvgGrow 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+    }
+
+    .blender-icon-svg.clickable {
+      cursor: pointer;
+    }
+
+    .blender-icon-svg.clickable:hover {
+      background-color: rgba(255, 255, 255, 0.22);
+      border-color: var(--accent);
+      transform: scale(1.12);
+      box-shadow: 0 0 10px rgba(234, 118, 0, 0.45);
+    }
+
+    .blender-icon-svg.clickable:active {
+      transform: scale(0.94);
+    }
+
+    .step-card.active .blender-icon-svg.clickable:hover {
+      background: linear-gradient(135deg, rgba(234, 118, 0, 0.38), rgba(255, 255, 255, 0.18));
+      border-color: #ff9800;
+      transform: scale(1.08);
+      box-shadow: 0 4px 18px rgba(234, 118, 0, 0.55);
+    }
+
+    .step-card.active .blender-icon-svg.clickable:active {
+      transform: scale(0.96);
+    }
+
+    @keyframes iconGrowProminent {
+      0% {
+        width: 26px;
+        height: 26px;
+        transform: scale(0.85);
+        border-radius: 6px;
+      }
+      100% {
+        width: 44px;
+        height: 44px;
+        transform: scale(1);
+        border-radius: 10px;
+      }
+    }
+
+    @keyframes iconSvgGrow {
+      0% {
+        width: 18px;
+        height: 18px;
+      }
+      100% {
+        width: 28px;
+        height: 28px;
+      }
     }
 
     .blender-icon-badge svg {
@@ -1105,6 +1136,7 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         <div id="thinkingBanner" class="thinking-banner">
           <div class="thinking-spinner"></div>
           <span id="thinkingText">Mentor is thinking...</span>
+          <button id="btnStopAI" class="btn-cancel-followup" title="Stop AI Processing" onclick="stopAI()" style="margin-left: auto;">✕ Stop</button>
         </div>
 
         <div id="followupBanner" class="followup-banner">
@@ -1600,16 +1632,17 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       remove: "TRASH"
     };
 
-    function getBlenderIconSVG(iconId) {
+    function getBlenderIconSVG(iconId, onClickAttr = "", customTitle = "") {
       if (!iconId || iconId === "NONE") return "";
       const raw = String(iconId).trim();
       let key = raw.toLowerCase();
       const alias = BLENDER_ICON_ALIASES[key];
       if (alias) key = alias.toLowerCase();
 
+      let svg = "";
       // 1. Official Blender UI icons directly from https://ui.blender.org/icons
       if (window.BLENDER_OFFICIAL_ICONS) {
-        let svg = window.BLENDER_OFFICIAL_ICONS[key];
+        svg = window.BLENDER_OFFICIAL_ICONS[key];
         if (!svg && key.endsWith("_data")) {
           svg = window.BLENDER_OFFICIAL_ICONS[key.replace("_data", "")];
         }
@@ -1619,18 +1652,20 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
         if (!svg && key.startsWith("mod_")) {
           svg = window.BLENDER_OFFICIAL_ICONS["modifier"];
         }
-        if (svg) {
-          return `<span class="blender-icon-svg" title="${raw}">${svg}</span>`;
-        }
       }
 
       // 2. Vector fallback
-      const upper = raw.toUpperCase();
-      const fallbackSvg = BLENDER_SVG_ICONS[upper] || (upper.startsWith("MOD_") ? BLENDER_SVG_ICONS.MODIFIER : null);
-      if (fallbackSvg) {
-        return `<span class="blender-icon-svg" title="${upper}">${fallbackSvg}</span>`;
+      if (!svg) {
+        const upper = raw.toUpperCase();
+        svg = BLENDER_SVG_ICONS[upper] || (upper.startsWith("MOD_") ? BLENDER_SVG_ICONS.MODIFIER : null);
       }
-      return "";
+      if (!svg) return "";
+
+      const titleAttr = customTitle ? `title="${customTitle}"` : `title="${raw}"`;
+      const clickAttr = onClickAttr ? `onclick="${onClickAttr}" role="button" tabindex="0"` : "";
+      const clickableClass = onClickAttr ? "clickable" : "";
+
+      return `<span class="blender-icon-svg ${clickableClass}" ${titleAttr} ${clickAttr}>${svg}</span>`;
     }
 
     function getIconRawSVG(iconId) {
@@ -1674,90 +1709,92 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
       questTitle.textContent = `Step ${currentIdx + 1} of ${steps.length}`;
       stepsContainer.innerHTML = "";
 
-      // Hero Card for current active step
-      const current = steps[currentIdx];
-      const isLastHeroStep = (currentIdx === steps.length - 1);
-      if (current) {
-        const hero = document.createElement("div");
-        hero.className = "step-hero";
-        
-        hero.innerHTML = `
-          <div class="step-hero-header">
-            <span>${isLastHeroStep ? "Final Action • Step " + (currentIdx + 1) : "Current Action • Step " + (currentIdx + 1)}</span>
-            <div class="step-actions">
-              ${current.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${currentIdx}, event)"><span class="action-icon">${getIconRawSVG("light")}</span> Highlight</button>` : ""}
-              <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${currentIdx}, event)"><span class="action-icon">${getIconRawSVG("question")}</span> Ask</button>
-            </div>
+      steps.forEach((step, idx) => {
+        const isActive = (idx === currentIdx);
+        const isLastCard = (idx === steps.length - 1);
+        const checkIcon = step.is_done ? `<span class="step-check-icon">${getIconRawSVG("checkmark")}</span>` : "";
+
+        const card = document.createElement("div");
+        card.className = `step-card ${isActive ? "active" : ""}`;
+        card.id = `step-card-${idx}`;
+        card.onclick = (e) => {
+          if (idx !== (appState ? appState.current_step : currentIdx)) {
+            selectStep(idx);
+          }
+        };
+
+        let headerLabel;
+        if (isActive) {
+          headerLabel = isLastCard
+            ? `Final Action • Step ${idx + 1}`
+            : `Current Action • Step ${idx + 1}`;
+        } else {
+          headerLabel = `${checkIcon}Step ${idx + 1}${isLastCard ? " (Final)" : ""}`;
+        }
+
+        const actionButtons = `
+          <div class="step-actions">
+            ${step.highlight ? `
+              <button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${idx}, event)">
+                <span class="action-icon">${getIconRawSVG("light")}</span>${isActive ? " Highlight" : ""}
+              </button>` : ""}
+            <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${idx}, event)">
+              <span class="action-icon">${getIconRawSVG("question")}</span>${isActive ? " Ask" : ""}
+            </button>
           </div>
-          <div class="step-hero-instruction">
-            ${getBlenderIconSVG(current.icon)}
-            <span style="flex: 1;">${current.instruction}</span>
+        `;
+
+        card.innerHTML = `
+          <div class="step-card-top">
+            <span>${headerLabel}</span>
+            ${actionButtons}
           </div>
-          ${current.description ? `<div class="step-hero-desc"><strong><span class="action-icon" style="margin-right: 4px;">${getIconRawSVG("light")}</span> Context & Reasoning</strong>${current.description}</div>` : ""}
-          ${isLastHeroStep ? `
-            <div class="step-hero-completion">
+          <div class="step-card-instruction">
+            ${getBlenderIconSVG(
+              step.icon,
+              step.highlight ? `triggerHighlight(${idx}, event)` : (isActive ? "" : `selectStep(${idx})`),
+              step.highlight ? "Click to highlight in Blender" : ""
+            )}
+            <span style="flex: 1;">${step.instruction}</span>
+          </div>
+          ${isActive && step.description ? `
+            <div class="step-card-reasoning">
+              <strong><span class="action-icon" style="margin-right: 4px;">${getIconRawSVG("light")}</span> Context & Reasoning</strong>
+              ${step.description}
+            </div>` : ""}
+          ${isActive && isLastCard ? `
+            <div class="step-card-completion">
               <div>
                 <strong>This is the last step.</strong>
                 <span>Hope you've achieved what you wanted! Feel free to ask anytime if you need adjustments or another task.</span>
               </div>
-            </div>
-          ` : ""}
+            </div>` : ""}
         `;
-        stepsContainer.appendChild(hero);
-      }
 
-      // Group subsequent steps in dedicated container box
-      if (steps.length > 1) {
-        const subBox = document.createElement("div");
-        subBox.className = "subsequent-steps-box";
+        stepsContainer.appendChild(card);
+      });
 
-        const subHeader = document.createElement("div");
-        subHeader.className = "subsequent-steps-header";
-        subHeader.textContent = "Step Sequence";
-        subBox.appendChild(subHeader);
-
-        const subList = document.createElement("div");
-        subList.className = "subsequent-steps-list";
-
-        steps.forEach((step, idx) => {
-          const card = document.createElement("div");
-          card.className = `step-card ${idx === currentIdx ? "active" : ""}`;
-          card.onclick = () => selectStep(idx);
-
-          const isLastCard = (idx === steps.length - 1);
-          const checkIcon = step.is_done ? `<span class="step-check-icon">${getIconRawSVG("checkmark")}</span>` : "";
-
-          card.innerHTML = `
-            <div class="step-card-top">
-              <span>${checkIcon}Step ${idx + 1}${isLastCard ? " (Final)" : ""}</span>
-              <div class="step-actions">
-                ${step.highlight ? `<button class="btn-step-action highlight-btn" title="Show UI highlight in Blender" onclick="triggerHighlight(${idx}, event)"><span class="action-icon">${getIconRawSVG("light")}</span></button>` : ""}
-                <button class="btn-step-action ask-btn" title="Ask a follow-up question about this step" onclick="startFollowup(${idx}, event)"><span class="action-icon">${getIconRawSVG("question")}</span></button>
-              </div>
-            </div>
-            <div class="step-card-instruction">
-              ${getBlenderIconSVG(step.icon)}
-              <span style="flex: 1;">${step.instruction}</span>
-            </div>
-            ${step.description ? `<div class="step-card-reasoning">${step.description}</div>` : ""}
-            ${isLastCard ? `
-              <div class="step-card-completion">
-                <span>This is the last step. Hope you've achieved what you wanted!</span>
-              </div>
-            ` : ""}
-          `;
-          subList.appendChild(card);
-        });
-
-        subBox.appendChild(subList);
-        stepsContainer.appendChild(subBox);
-      }
+      // Smoothly scroll active card to the top
+      requestAnimationFrame(() => {
+        const activeCard = stepsContainer.querySelector('.step-card.active');
+        if (activeCard) {
+          const containerRect = stepsContainer.getBoundingClientRect();
+          const cardRect = activeCard.getBoundingClientRect();
+          const targetScroll = stepsContainer.scrollTop + (cardRect.top - containerRect.top) - 12;
+          stepsContainer.scrollTo({ top: Math.max(0, targetScroll), behavior: "smooth" });
+        }
+      });
     }
 
     let activeFollowupStep = -1;
 
     async function triggerHighlight(stepIdx, event) {
       if (event) event.stopPropagation();
+      // If clicking highlight or icon on a non-current step, also select it
+      if (appState && stepIdx !== appState.current_step) {
+        selectStep(stepIdx);
+        return;
+      }
       try {
         await fetch("/api/step", {
           method: "POST",
@@ -1792,6 +1829,15 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "cancel" })
         }).catch(() => {});
+      }
+    }
+
+    async function stopAI() {
+      try {
+        await fetch("/api/stop", { method: "POST" });
+        fetchState();
+      } catch (e) {
+        console.error("Error stopping AI processing:", e);
       }
     }
 
@@ -1850,29 +1896,43 @@ window.BLENDER_OFFICIAL_ICONS = {"char_notdef":"<?xml version=\"1.0\" encoding=\
     }
 
     async function selectStep(idx) {
+      if (typeof idx !== "number" || idx < 0) return;
+      if (appState && appState.steps && idx >= appState.steps.length) return;
+
+      // 1. Instant optimistic update for 0ms visual responsiveness
+      if (appState && appState.current_step !== idx) {
+        appState.current_step = idx;
+        renderSteps(appState.steps, idx);
+        if (ttsMode !== "off" && appState.steps[idx]) {
+          speakStep(appState.steps[idx], idx);
+          lastSpokenStep = idx;
+        }
+      }
+
+      // 2. Dispatch to Blender
       try {
         await fetch("/api/step", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ step: idx })
+          body: JSON.stringify({ action: "goto", step: idx })
         });
-        fetchState();
+        setTimeout(fetchState, 120);
       } catch (err) {
         console.error("Error changing step:", err);
       }
     }
 
     async function stepNav(action) {
-      try {
-        await fetch("/api/step", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: action })
-        });
-        fetchState();
-      } catch (err) {
-        console.error("Error stepping:", err);
+      if (!appState || !appState.steps || appState.steps.length === 0) return;
+      let targetIdx = appState.current_step;
+      if (action === "next" && targetIdx < appState.steps.length - 1) {
+        targetIdx++;
+      } else if (action === "prev" && targetIdx > 0) {
+        targetIdx--;
+      } else {
+        return;
       }
+      selectStep(targetIdx);
     }
 
     // Event Listeners

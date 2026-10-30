@@ -31,8 +31,13 @@ def get_thinking_icon_id():
     return 0
 
 from ..ai_client import ask_ai
-from ..scene_reader import get_basic_context_json, get_scene_context
-from ..state.conversation import sync_scene_to_wm, sync_wm_to_scene
+from ..scene_reader import (
+    get_basic_context_json,
+    get_scene_context,
+    capture_scene_snapshot,
+    _global_inspector,
+)
+from ..state.conversation import sync_scene_to_wm, sync_wm_to_scene, set_input_text_suppressed
 from ..logger import (
     get_log_filepath,
     get_last_exchange,
@@ -53,6 +58,10 @@ from .highlight import (
 _worker_thread = None
 _worker_result = None   # dict | Exception | None
 _worker_lock = threading.Lock()
+_cancel_event = threading.Event()
+_last_submitted_prompt = ""
+_turn_counter = 0
+_poll_tick_count = 0
 
 
 def _redraw_chat_panel():
@@ -97,7 +106,8 @@ def _status_callback(message: str):
     bpy.app.timers.register(_set, first_interval=0.0)
 
 
-def _ai_worker(prefs_snapshot: dict, basic_ctx: str, prompt: str):
+def _ai_worker(prefs_snapshot: dict, basic_ctx: str, prompt: str,
+               snapshot: dict = None, turn_id: str = None, cancel_event=None):
     """Run in a background thread — calls the AI with tool-calling loop."""
     global _worker_result
 
@@ -113,7 +123,10 @@ def _ai_worker(prefs_snapshot: dict, basic_ctx: str, prompt: str):
 
     try:
         result = ask_ai(proxy, basic_ctx, prompt,
-                        status_callback=_status_callback)
+                        status_callback=_status_callback,
+                        snapshot=snapshot,
+                        turn_id=turn_id,
+                        cancel_event=cancel_event)
         with _worker_lock:
             _worker_result = result
     except Exception as e:
@@ -183,14 +196,41 @@ def _format_user_friendly_error(err: Exception) -> str:
 
 
 def _poll_worker_done():
-    """Timer callback — checks if the background AI call has finished."""
-    global _worker_result, _worker_thread, _thinking_frame
+    """Timer callback — processes pending inspection requests and checks worker state."""
+    global _worker_result, _worker_thread, _thinking_frame, _poll_tick_count, _cancel_event
+
+    # 1. Process any pending on-demand scene inspection requests safely on the main thread
+    _global_inspector.process_pending_requests()
 
     with _worker_lock:
         result = _worker_result
 
+    # If stopped or interrupted, perform clean termination without logging an error
+    if _cancel_event.is_set() or isinstance(result, InterruptedError):
+        scene = getattr(bpy.context, "scene", None) or (
+            bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None
+        )
+        wm = getattr(bpy.context, "window_manager", None) or (
+            bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None
+        )
+        if scene:
+            scene.bm_is_processing = False
+            scene.bm_status_message = ""
+        if wm:
+            wm.bm_is_processing = False
+            wm.bm_status_message = ""
+
+        _global_inspector.clear_active_turn()
+        with _worker_lock:
+            _worker_result = None
+        _worker_thread = None
+        _cancel_event.clear()
+        _redraw_chat_panel()
+        return None
+
     if result is None:
         # Still working — animate the thinking status and tag redraw
+        _poll_tick_count += 1
         try:
             scene = getattr(bpy.context, "scene", None) or (
                 bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None
@@ -199,7 +239,7 @@ def _poll_worker_done():
                 bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None
             )
             is_proc = (scene and scene.bm_is_processing) or (wm and wm.bm_is_processing)
-            if is_proc:
+            if is_proc and _poll_tick_count % 10 == 0:
                 current_status = getattr(scene, "bm_status_message", "") if scene else getattr(wm, "bm_status_message", "")
                 if not current_status or current_status.startswith("Thinking"):
                     next_status = _thinking_animation_cycle[_thinking_frame % len(_thinking_animation_cycle)]
@@ -208,10 +248,10 @@ def _poll_worker_done():
                         scene.bm_status_message = next_status
                     if wm:
                         wm.bm_status_message = next_status
-            _redraw_chat_panel()
+                _redraw_chat_panel()
         except Exception:
             pass
-        return 0.25
+        return 0.02
 
     # Work is done — process the result on the main thread
     scene = getattr(bpy.context, "scene", None) or (
@@ -248,6 +288,7 @@ def _poll_worker_done():
         print(f"[BlenderMentor] Error syncing log in _poll_worker_done: {e}")
 
     # Clean up
+    _global_inspector.clear_active_turn()
     with _worker_lock:
         _worker_result = None
     _worker_thread = None
@@ -460,7 +501,7 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
     bl_description = "Send your message to the AI mentor"
 
     def execute(self, context):
-        global _worker_thread, _worker_result
+        global _worker_thread, _worker_result, _cancel_event, _last_submitted_prompt
 
         scene = bpy.context.scene
         user_text = scene.bm_input_text.strip()
@@ -471,6 +512,14 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         if scene.bm_is_processing:
             self.report({'WARNING'}, "Still processing — please wait.")
             return {'CANCELLED'}
+
+        # Track submitted text for restoration if stopped/cancelled
+        _last_submitted_prompt = user_text
+        scene.bm_last_submitted_prompt = user_text
+        wm = getattr(context, "window_manager", None)
+        if wm and hasattr(wm, "bm_last_submitted_prompt"):
+            wm.bm_last_submitted_prompt = user_text
+        _cancel_event.clear()
 
         # Capture follow-up state before clearing
         followup_step = scene.bm_followup_step
@@ -518,8 +567,15 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
             scene.bm_followup_step = -1
             return {'FINISHED'}
 
-        # --- Launch background AI call ---
-        basic_ctx = get_basic_context_json()
+        # --- Capture main-thread snapshot & Launch background AI call ---
+        global _turn_counter, _poll_tick_count
+        _turn_counter += 1
+        turn_id = f"turn_{_turn_counter}_{int(time.time()*1000)}"
+        _poll_tick_count = 0
+
+        snapshot = capture_scene_snapshot(turn_id=turn_id)
+        _global_inspector.set_active_turn(turn_id, snapshot)
+        basic_ctx = json.dumps(snapshot["basic_context"], indent=2)
 
         # Build prompt — explicit follow-up, auto follow-up, or fresh
         if followup_step >= 0 and last_response:
@@ -563,7 +619,7 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
 
         _worker_thread = threading.Thread(
             target=_ai_worker,
-            args=(prefs_snapshot, basic_ctx, prompt),
+            args=(prefs_snapshot, basic_ctx, prompt, snapshot, turn_id, _cancel_event),
             daemon=True,
         )
         _worker_thread.start()
@@ -571,9 +627,61 @@ class BLENDERMENTOR_OT_send_message(bpy.types.Operator):
         # Tag immediate redraw so the status displays instantly
         _redraw_chat_panel()
 
-        # Register a timer to animate and poll for completion
-        bpy.app.timers.register(_poll_worker_done, first_interval=0.25)
+        # Register a fast timer to process inspection requests and poll for completion
+        bpy.app.timers.register(_poll_worker_done, first_interval=0.02)
 
+        return {'FINISHED'}
+
+
+class BLENDERMENTOR_OT_stop_processing(bpy.types.Operator):
+    bl_idname = "blendermentor.stop_processing"
+    bl_label = "Stop AI"
+    bl_description = "Immediately halt AI reasoning and restore submitted prompt"
+
+    def execute(self, context):
+        global _cancel_event, _last_submitted_prompt, _worker_result, _worker_thread
+
+        _cancel_event.set()
+        _global_inspector.clear_active_turn()
+
+        scene = getattr(context, "scene", None) or getattr(bpy.context, "scene", None) or (
+            bpy.data.scenes[0] if len(bpy.data.scenes) > 0 else None
+        )
+        wm = getattr(context, "window_manager", None) or getattr(bpy.context, "window_manager", None) or (
+            bpy.data.window_managers[0] if len(bpy.data.window_managers) > 0 else None
+        )
+
+        if scene:
+            scene.bm_is_processing = False
+            scene.bm_status_message = ""
+            # If the last message was the user's submitted message, remove it from chat history
+            if scene.bm_chat_history and len(scene.bm_chat_history) > 0:
+                last_msg = scene.bm_chat_history[-1]
+                if getattr(last_msg, "is_user", False):
+                    scene.bm_chat_history.remove(len(scene.bm_chat_history) - 1)
+
+            # Restore the user's prompt so they can edit or delete without losing text
+            restored_prompt = (
+                getattr(scene, "bm_last_submitted_prompt", "") or
+                (getattr(wm, "bm_last_submitted_prompt", "") if wm else "") or
+                _last_submitted_prompt
+            )
+            if restored_prompt and not scene.bm_input_text.strip():
+                set_input_text_suppressed(scene, restored_prompt)
+
+        if wm:
+            wm.bm_is_processing = False
+            wm.bm_status_message = ""
+
+        with _worker_lock:
+            _worker_result = None
+        _worker_thread = None
+
+        if scene:
+            sync_scene_to_wm(scene)
+
+        _redraw_chat_panel()
+        self.report({'INFO'}, "AI processing stopped.")
         return {'FINISHED'}
 
 
@@ -583,6 +691,7 @@ class BLENDERMENTOR_OT_clear_chat(bpy.types.Operator):
     bl_description = "Clear conversation history and steps"
 
     def execute(self, context):
+        _global_inspector.clear_active_turn()
         scene = bpy.context.scene
         scene.bm_chat_history.clear()
         scene.bm_steps.clear()
@@ -1185,6 +1294,15 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
         # 2. Unified Input Bar: [Mic Button (1:1 square)] [Text Field + Send]
         # (Displayed only when connected to browser companion)
         # -------------------------------------------------------------
+        # Follow-up badge / banner (displayed directly above the input bar when active)
+        followup = scene.bm_followup_step
+        if followup >= 0 and followup < len(scene.bm_steps):
+            followup_box = layout.box()
+            row = followup_box.row(align=True)
+            row.label(text=f"Asking about Step {followup + 1}", icon='QUESTION')
+            row.operator("blendermentor.cancel_followup", text="", icon='X')
+            layout.separator(factor=0.3)
+
         bar = layout.row(align=False)
         bar.scale_y = 1.35
 
@@ -1215,8 +1333,7 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
 
             send_sub = input_sub.row(align=True)
             send_sub.scale_x = 1.2
-            send_btn = send_sub.operator("blendermentor.send_message", text="", icon='SORTTIME')
-            send_btn.enabled = False
+            send_sub.operator("blendermentor.stop_processing", text="", icon='CANCEL')
         else:
             input_sub.prop(scene, "bm_input_text", text="")
             send_sub = input_sub.row(align=True)
@@ -1315,16 +1432,6 @@ class BLENDERMENTOR_PT_chat(bpy.types.Panel):
                         fin_col.label(text=fl, icon='CHECKMARK')
                     else:
                         fin_col.label(text=f"  {fl}")
-
-        # -------------------------------------------------------------
-        # 5. Follow-up banner (if active)
-        # -------------------------------------------------------------
-        followup = scene.bm_followup_step
-        if followup >= 0 and followup < len(scene.bm_steps):
-            followup_box = layout.box()
-            row = followup_box.row(align=True)
-            row.label(text=f"Asking about Step {followup + 1}", icon='QUESTION')
-            row.operator("blendermentor.cancel_followup", text="", icon='X')
 
 
 class BLENDERMENTOR_PT_devtools(bpy.types.Panel):
@@ -1439,6 +1546,7 @@ def _calc_char_width(context):
 
 _classes = (
     BLENDERMENTOR_OT_send_message,
+    BLENDERMENTOR_OT_stop_processing,
     BLENDERMENTOR_OT_clear_chat,
     BLENDERMENTOR_OT_open_web_companion,
     BLENDERMENTOR_OT_hybrid_mic,

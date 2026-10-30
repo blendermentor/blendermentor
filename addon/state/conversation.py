@@ -39,6 +39,21 @@ _suppress_message_update = False
 _is_syncing = False
 
 
+def set_input_text_suppressed(scene, text: str):
+    """Set bm_input_text without triggering the on_message_update auto-send handler."""
+    global _suppress_message_update
+    prev = _suppress_message_update
+    _suppress_message_update = True
+    try:
+        if scene and hasattr(scene, "bm_input_text"):
+            scene.bm_input_text = text
+        wm = getattr(bpy.context, "window_manager", None)
+        if wm and hasattr(wm, "bm_input_text"):
+            wm.bm_input_text = text
+    finally:
+        _suppress_message_update = prev
+
+
 def sync_scene_to_wm(scene=None):
     """Mirror scene state to WindowManager."""
     global _is_syncing
@@ -75,6 +90,7 @@ def sync_scene_to_wm(scene=None):
         wm.bm_current_step = scene.bm_current_step
         wm.bm_followup_step = scene.bm_followup_step
         wm.bm_last_ai_response = scene.bm_last_ai_response
+        wm.bm_last_submitted_prompt = getattr(scene, "bm_last_submitted_prompt", "")
         wm.bm_status_message = scene.bm_status_message
         wm.bm_is_processing = scene.bm_is_processing
         wm.bm_youtube_query = scene.bm_youtube_query
@@ -124,6 +140,7 @@ def sync_wm_to_scene(scene=None):
         scene.bm_current_step = wm.bm_current_step
         scene.bm_followup_step = wm.bm_followup_step
         scene.bm_last_ai_response = wm.bm_last_ai_response
+        scene.bm_last_submitted_prompt = getattr(wm, "bm_last_submitted_prompt", "")
 
         # Protect live thinking state: if either Scene or WM is currently processing, keep processing True!
         if wm.bm_is_processing or scene.bm_is_processing:
@@ -223,6 +240,10 @@ def register_properties():
         name="Last AI Response", default="",
         description="Raw JSON of the last AI response (for follow-up context)"
     )
+    bpy.types.WindowManager.bm_last_submitted_prompt = bpy.props.StringProperty(
+        name="Last Submitted Prompt", default="",
+        description="User prompt that was submitted (restored if processing is stopped)"
+    )
     bpy.types.WindowManager.bm_status_message = bpy.props.StringProperty(
         name="Status Message", default="",
         description="Current AI processing status (e.g. 'Checking Render Settings...')"
@@ -264,6 +285,10 @@ def register_properties():
     bpy.types.Scene.bm_last_ai_response = bpy.props.StringProperty(
         name="Last AI Response", default="",
         description="Raw JSON of the last AI response (for follow-up context)"
+    )
+    bpy.types.Scene.bm_last_submitted_prompt = bpy.props.StringProperty(
+        name="Last Submitted Prompt", default="",
+        description="User prompt that was submitted (restored if processing is stopped)"
     )
     bpy.types.Scene.bm_status_message = bpy.props.StringProperty(
         name="Status Message", default="",
@@ -310,6 +335,7 @@ def unregister_properties():
         "bm_youtube_query",
         "bm_is_processing",
         "bm_status_message",
+        "bm_last_submitted_prompt",
         "bm_last_ai_response",
         "bm_followup_step",
         "bm_input_text",

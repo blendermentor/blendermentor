@@ -247,6 +247,175 @@ class TestDiagnosticImprovements(unittest.TestCase):
         print("✅ Test 8 Passed: get_material_details registered in TOOL_REGISTRY and cleanly invokable.")
 
 
+    # -----------------------------------------------------------------------
+    # Texture_Target Regression and Control Tests
+    # -----------------------------------------------------------------------
+    def test_09_texture_target_disconnected_image_color(self):
+        """Reproduce Texture_Target scenario: Image Texture exists and Principled BSDF is connected
+        to Material Output, but Image Texture Color is disconnected from Principled BSDF Base Color.
+        Assert that the tool reports both facts accurately from evidence."""
+        # Create Texture_Target object
+        bpy.ops.mesh.primitive_cube_add(size=2.0, location=(0, 0, 0))
+        target_obj = bpy.context.active_object
+        target_obj.name = "Texture_Target"
+
+        mat = bpy.data.materials.new("TargetMat")
+        mat.use_nodes = True
+        target_obj.data.materials.append(mat)
+
+        nodes = mat.node_tree.nodes
+        bsdf = nodes.get("Principled BSDF")
+        out_node = next(n for n in nodes if n.type == 'OUTPUT_MATERIAL')
+
+        # Add Image Texture node with a valid image data-block
+        tex_node = nodes.new("ShaderNodeTexImage")
+        tex_node.name = "Image Texture"
+        img = bpy.data.images.new("target_texture.png", width=128, height=128)
+        tex_node.image = img
+
+        # Ensure Principled BSDF is connected to Material Output Surface
+        # but Image Texture Color is DISCONNECTED from Base Color
+        if not out_node.inputs["Surface"].is_linked:
+            mat.node_tree.links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
+
+        res = get_material_details("Texture_Target")
+        self.assertEqual(res["object_name"], "Texture_Target")
+        self.assertEqual(res["material_slots_count"], 1)
+
+        mat_entry = res["materials"][0]
+        # 1. Shader connected to Material Output
+        self.assertTrue(mat_entry["surface_connected"])
+        self.assertEqual(mat_entry["surface_shader"]["node_name"], bsdf.name)
+
+        # 2. Base Color is NOT linked
+        bc_input = mat_entry["principled_bsdf"]["inputs"]["base_color"]
+        self.assertFalse(bc_input["is_linked"])
+        self.assertIsNone(bc_input["linked_from"])
+        self.assertIsNotNone(bc_input["default_value"])
+
+        # 3. Image Texture Color output is NOT connected
+        tex_entry = mat_entry["image_textures"][0]
+        self.assertEqual(tex_entry["node_name"], "Image Texture")
+        self.assertEqual(tex_entry["image_name"], "target_texture.png")
+        self.assertFalse(tex_entry["color_output_connected"])
+        self.assertEqual(len(tex_entry["color_destinations"]), 0)
+
+        # 4. Overall helper flag
+        self.assertFalse(mat_entry["image_texture_connected_to_base_color"])
+
+        # 5. Node links check: contains BSDF -> Output, does NOT contain Tex -> BSDF
+        links = mat_entry["node_links"]
+        self.assertTrue(any(l["from_node"] == bsdf.name and l["to_node"] == out_node.name for l in links))
+        self.assertFalse(any(l["from_node"] == tex_node.name and l["to_node"] == bsdf.name for l in links))
+
+        # 6. Observations / diagnostic summary report the exact facts
+        self.assertTrue(any("Image Texture" in obs and "Color output is NOT connected" in obs for obs in mat_entry["observations"]))
+        self.assertIn("Color output is NOT connected to Principled BSDF Base Color", res["diagnostic_summary"])
+
+        print("✅ Test 9 Passed: Texture_Target disconnected Image Texture Color accurately reported from tool evidence.")
+
+    def test_10_texture_target_connected_control(self):
+        """Control test: Image Texture Color is connected to Principled BSDF Base Color.
+        Verify that the tool reports the connection and destination sockets accurately."""
+        bpy.ops.mesh.primitive_cube_add(size=2.0, location=(0, 0, 0))
+        target_obj = bpy.context.active_object
+        target_obj.name = "Texture_Target_Connected"
+
+        mat = bpy.data.materials.new("ConnectedMat")
+        mat.use_nodes = True
+        target_obj.data.materials.append(mat)
+
+        nodes = mat.node_tree.nodes
+        bsdf = nodes.get("Principled BSDF")
+        out_node = next(n for n in nodes if n.type == 'OUTPUT_MATERIAL')
+
+        tex_node = nodes.new("ShaderNodeTexImage")
+        tex_node.name = "Image Texture"
+        img = bpy.data.images.new("connected_texture.png", width=128, height=128)
+        tex_node.image = img
+
+        # Connect both: Surface -> Output, and Image Texture Color -> Base Color
+        mat.node_tree.links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
+        mat.node_tree.links.new(tex_node.outputs["Color"], bsdf.inputs["Base Color"])
+
+        res = get_material_details("Texture_Target_Connected")
+        mat_entry = res["materials"][0]
+
+        # 1. Surface connected
+        self.assertTrue(mat_entry["surface_connected"])
+
+        # 2. Base Color IS linked from Image Texture Color
+        bc_input = mat_entry["principled_bsdf"]["inputs"]["base_color"]
+        self.assertTrue(bc_input["is_linked"])
+        self.assertEqual(bc_input["linked_from"]["node_name"], tex_node.name)
+        self.assertEqual(bc_input["linked_from"]["socket_name"], "Color")
+
+        # 3. Image Texture Color IS connected to Base Color
+        tex_entry = mat_entry["image_textures"][0]
+        self.assertTrue(tex_entry["color_output_connected"])
+        self.assertEqual(len(tex_entry["color_destinations"]), 1)
+        self.assertEqual(tex_entry["color_destinations"][0]["to_node"], bsdf.name)
+        self.assertEqual(tex_entry["color_destinations"][0]["to_socket"], "Base Color")
+
+        # 4. Helper flag is True
+        self.assertTrue(mat_entry["image_texture_connected_to_base_color"])
+
+        # 5. Node links check: contains both links
+        links = mat_entry["node_links"]
+        self.assertTrue(any(l["from_node"] == tex_node.name and l["to_node"] == bsdf.name and l["to_socket"] == "Base Color" for l in links))
+        self.assertTrue(any(l["from_node"] == bsdf.name and l["to_node"] == out_node.name for l in links))
+
+        print("✅ Test 10 Passed: Control test verifies connected Image Texture Color is accurately reported.")
+
+    def test_11_disconnected_texture_distinguishes_no_pixel_data(self):
+        """Verify that when an Image Texture is disconnected from Base Color AND the image
+        has no pixel data, the diagnosis distinguishes the confirmed direct cause (missing link)
+        from the conditional outcome (missing image data upon reconnection)."""
+        bpy.ops.mesh.primitive_cube_add(size=2.0, location=(0, 0, 0))
+        target_obj = bpy.context.active_object
+        target_obj.name = "Texture_NoData"
+
+        mat = bpy.data.materials.new("NoDataMat")
+        mat.use_nodes = True
+        target_obj.data.materials.append(mat)
+
+        nodes = mat.node_tree.nodes
+        bsdf = nodes.get("Principled BSDF")
+        out_node = next(n for n in nodes if n.type == 'OUTPUT_MATERIAL')
+
+        tex_node = nodes.new("ShaderNodeTexImage")
+        tex_node.name = "Image Texture"
+        # Create an image that has no pixel data (source='FILE' with no loaded file)
+        img = bpy.data.images.new("Empty_Texture.png", width=512, height=512)
+        img.source = 'FILE'
+        tex_node.image = img
+
+        # Connect Surface -> Output, but leave Image Texture Color DISCONNECTED from Base Color
+        mat.node_tree.links.new(bsdf.outputs["BSDF"], out_node.inputs["Surface"])
+
+        res = get_material_details("Texture_NoData")
+        mat_entry = res["materials"][0]
+        tex_entry = mat_entry["image_textures"][0]
+
+        # 1. Image Texture status reflects missing pixel data
+        self.assertFalse(tex_entry["has_data"])
+        self.assertIn("NO_DATA", tex_entry["status"])
+
+        # 2. Confirmed direct cause is reported
+        self.assertFalse(mat_entry["image_texture_connected_to_base_color"])
+        self.assertTrue(any("Confirmed cause" in obs and "Color output is NOT connected" in obs for obs in mat_entry["observations"]))
+
+        # 3. Secondary conditional finding is reported separately
+        self.assertTrue(any("Secondary finding (conditional)" in obs and "no pixel data loaded" in obs for obs in mat_entry["observations"]))
+        self.assertTrue(any("Secondary finding (conditional)" in obs and "may not display a meaningful texture" in obs for obs in mat_entry["observations"]))
+
+        # 4. Diagnostic summary contains both
+        self.assertIn("Confirmed cause", res["diagnostic_summary"])
+        self.assertIn("Secondary finding (conditional)", res["diagnostic_summary"])
+
+        print("✅ Test 11 Passed: Disconnected texture and missing pixel data distinguished as confirmed vs conditional.")
+
+
 def run_tests():
     suite = unittest.TestLoader().loadTestsFromTestCase(TestDiagnosticImprovements)
     runner = unittest.TextTestRunner(verbosity=2)

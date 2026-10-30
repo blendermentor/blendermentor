@@ -159,7 +159,7 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 source = wm if (wm and hasattr(wm, "bm_steps") and len(wm.bm_steps) > 0) else scene
 
                 if source:
-                    current_step = getattr(source, "bm_current_step", 0)
+                    current_step = getattr(scene, "bm_current_step", getattr(source, "bm_current_step", 0)) if scene else getattr(source, "bm_current_step", 0)
                     youtube_query = getattr(source, "bm_youtube_query", "")
 
                     for s in source.bm_steps:
@@ -312,18 +312,23 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
                 scene = getattr(bpy.context, "scene", None)
                 if not scene:
                     return None
+                wm = getattr(bpy.context, "window_manager", None)
                 if action == "next":
                     bpy.ops.blendermentor.step_next('EXEC_DEFAULT')
                 elif action == "prev":
                     bpy.ops.blendermentor.step_prev('EXEC_DEFAULT')
-                elif action in ("highlight", "goto") and step_idx is not None and 0 <= step_idx < len(scene.bm_steps):
-                    scene.bm_current_step = step_idx
-                    from .ui.chat_panel import _activate_step
-                    _activate_step(scene, step_idx)
                 elif step_idx is not None and 0 <= step_idx < len(scene.bm_steps):
                     scene.bm_current_step = step_idx
+                    if wm and hasattr(wm, "bm_current_step"):
+                        wm.bm_current_step = step_idx
                     from .ui.chat_panel import _activate_step
                     _activate_step(scene, step_idx)
+                    from .state.conversation import sync_scene_to_wm
+                    sync_scene_to_wm(scene)
+                    if hasattr(bpy.context, "window_manager") and bpy.context.window_manager:
+                        for window in bpy.context.window_manager.windows:
+                            for area in window.screen.areas:
+                                area.tag_redraw()
                 return None
 
             bpy.app.timers.register(_schedule_step, first_interval=0.001)
@@ -374,6 +379,22 @@ class BlenderMentorHTTPHandler(BaseHTTPRequestHandler):
             self._set_cors_headers()
             self.end_headers()
             self.wfile.write(json.dumps({"status": "cleared"}).encode("utf-8"))
+            return
+
+        # Stop / cancel AI processing
+        if self.path == "/api/stop":
+            def _schedule_stop():
+                try:
+                    bpy.ops.blendermentor.stop_processing('EXEC_DEFAULT')
+                except Exception as e:
+                    print(f"[BlenderMentor] Error stopping processing: {e}")
+                return None
+
+            bpy.app.timers.register(_schedule_stop, first_interval=0.001)
+            self.send_response(200)
+            self._set_cors_headers()
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "stopping"}).encode("utf-8"))
             return
 
         # 4. Acknowledge / reset remote mic send flag

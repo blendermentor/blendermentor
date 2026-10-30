@@ -15,6 +15,10 @@ import re
 import platform
 import os
 import mathutils
+import threading
+import queue
+import time
+import copy
 
 
 # ---------------------------------------------------------------------------
@@ -1102,13 +1106,29 @@ def get_material_details(object_name: str, slot_index: int = None, material_name
 
         nodes = mat.node_tree.nodes
 
-        # Find Material Output node
+        # 1. Collect all node-to-node links in structured format
+        node_links = []
+        for lk in mat.node_tree.links:
+            if not getattr(lk, "is_valid", True):
+                continue
+            node_links.append({
+                "from_node": lk.from_node.name,
+                "from_node_type": lk.from_node.type,
+                "from_socket": lk.from_socket.name,
+                "to_node": lk.to_node.name,
+                "to_node_type": lk.to_node.type,
+                "to_socket": lk.to_socket.name,
+            })
+        mat_entry["node_links"] = node_links
+
+        # 2. Find Material Output node and verify Surface socket connection
         output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL' and getattr(n, "is_active_output", True)), None)
         if not output_node:
             output_node = next((n for n in nodes if n.type == 'OUTPUT_MATERIAL'), None)
 
         if not output_node:
             mat_entry["output_status"] = "Missing Material Output node"
+            mat_entry["surface_connected"] = False
             detected_issues.append(f"Material '{mat.name}' is missing a Material Output node.")
         else:
             surf_sock = output_node.inputs.get("Surface")
@@ -1127,80 +1147,228 @@ def get_material_details(object_name: str, slot_index: int = None, material_name
                     "socket_name": link.from_socket.name,
                 }
 
-        # Inspect Principled BSDF node if present
+        # 3. Inspect Principled BSDF node if present
         principled = next((n for n in nodes if n.type == 'BSDF_PRINCIPLED'), None)
+        bsdf_info = None
         if principled:
-            bsdf_info = {}
-            # Base Color
-            bc = principled.inputs.get("Base Color")
-            if bc:
-                if bc.is_linked:
-                    bsdf_info["base_color"] = f"linked to {bc.links[0].from_node.name}.{bc.links[0].from_socket.name}"
+            bsdf_info = {
+                "node_name": principled.name,
+                "node_type": principled.type,
+            }
+
+            key_socket_specs = [
+                ("Base Color", "base_color"),
+                ("Metallic", "metallic"),
+                ("Roughness", "roughness"),
+                ("Alpha", "alpha"),
+                ("Normal", "normal"),
+                ("Transmission Weight", "transmission"),
+                ("Transmission", "transmission"),
+                ("Emission Color", "emission_color"),
+                ("Emission", "emission_color"),
+                ("Emission Strength", "emission_strength"),
+            ]
+
+            inputs_info = {}
+            for socket_name, key_id in key_socket_specs:
+                if key_id in inputs_info:
+                    continue
+                sock = principled.inputs.get(socket_name)
+                if not sock:
+                    continue
+
+                is_linked = sock.is_linked
+                linked_from = None
+                if is_linked and sock.links:
+                    src_lk = sock.links[0]
+                    linked_from = {
+                        "node_name": src_lk.from_node.name,
+                        "node_type": src_lk.from_node.type,
+                        "socket_name": src_lk.from_socket.name,
+                    }
+
+                def_val = None
+                if hasattr(sock, "default_value"):
+                    dv = sock.default_value
+                    if hasattr(dv, "__iter__"):
+                        def_val = [round(float(c), 3) for c in dv[:4]]
+                    elif isinstance(dv, (int, float)):
+                        def_val = round(float(dv), 3)
+
+                inputs_info[key_id] = {
+                    "socket_name": socket_name,
+                    "is_linked": is_linked,
+                    "linked_from": linked_from,
+                    "default_value": def_val,
+                }
+
+                # Populate backward-compatible keys in bsdf_info
+                if is_linked and linked_from:
+                    bsdf_info[key_id] = f"linked to {linked_from['node_name']}.{linked_from['socket_name']}"
                 else:
-                    bsdf_info["base_color"] = [round(c, 3) for c in bc.default_value[:3]]
-            # Roughness
-            r_sock = principled.inputs.get("Roughness")
-            if r_sock:
-                bsdf_info["roughness"] = f"linked to {r_sock.links[0].from_node.name}" if r_sock.is_linked else round(r_sock.default_value, 3)
-            # Metallic
-            m_sock = principled.inputs.get("Metallic")
-            if m_sock:
-                bsdf_info["metallic"] = f"linked to {m_sock.links[0].from_node.name}" if m_sock.is_linked else round(m_sock.default_value, 3)
-            # Transmission (support both v1 'Transmission' and v2 'Transmission Weight')
-            t_sock = principled.inputs.get("Transmission Weight") or principled.inputs.get("Transmission")
-            if t_sock:
-                bsdf_info["transmission"] = f"linked to {t_sock.links[0].from_node.name}" if t_sock.is_linked else round(t_sock.default_value, 3)
-            # Alpha
-            a_sock = principled.inputs.get("Alpha")
-            if a_sock:
-                bsdf_info["alpha"] = f"linked to {a_sock.links[0].from_node.name}" if a_sock.is_linked else round(a_sock.default_value, 3)
-                if not a_sock.is_linked and a_sock.default_value < 0.001:
-                    detected_issues.append(f"Material '{mat.name}' Principled BSDF Alpha is 0.0 (object may appear transparent/invisible).")
-            # Emission Strength
-            e_sock = principled.inputs.get("Emission Strength")
-            if e_sock:
-                bsdf_info["emission_strength"] = f"linked to {e_sock.links[0].from_node.name}" if e_sock.is_linked else round(e_sock.default_value, 3)
+                    bsdf_info[key_id] = def_val
+
+            bsdf_info["inputs"] = inputs_info
+
+            # Detect Alpha = 0 issue
+            alpha_item = inputs_info.get("alpha")
+            if alpha_item and not alpha_item["is_linked"] and alpha_item["default_value"] is not None and alpha_item["default_value"] < 0.001:
+                detected_issues.append(f"Material '{mat.name}' Principled BSDF Alpha is 0.0 (object may appear transparent/invisible).")
 
             mat_entry["principled_bsdf"] = bsdf_info
 
-        # Check Image Texture nodes for missing files
+        # 4. Check Image Texture nodes and socket connections
         img_nodes = [n for n in nodes if n.type == 'TEX_IMAGE']
+        textures_info = []
+        image_color_to_base_color = False
+
         if img_nodes:
-            textures_info = []
             for img_node in img_nodes:
                 img = img_node.image
-                tex_entry = {"node_name": img_node.name}
+
+                # Outgoing links from Color
+                color_sock = img_node.outputs.get("Color")
+                color_linked = bool(color_sock and color_sock.is_linked)
+                color_destinations = []
+                if color_linked and color_sock:
+                    for lk in color_sock.links:
+                        dest = {
+                            "to_node": lk.to_node.name,
+                            "to_node_type": lk.to_node.type,
+                            "to_socket": lk.to_socket.name,
+                        }
+                        color_destinations.append(dest)
+                        if principled and lk.to_node == principled and lk.to_socket.name == "Base Color":
+                            image_color_to_base_color = True
+
+                # Outgoing links from Alpha
+                alpha_sock = img_node.outputs.get("Alpha")
+                alpha_linked = bool(alpha_sock and alpha_sock.is_linked)
+                alpha_destinations = []
+                if alpha_linked and alpha_sock:
+                    for lk in alpha_sock.links:
+                        alpha_destinations.append({
+                            "to_node": lk.to_node.name,
+                            "to_node_type": lk.to_node.type,
+                            "to_socket": lk.to_socket.name,
+                        })
+
+                tex_entry = {
+                    "node_name": img_node.name,
+                    "color_output_connected": color_linked,
+                    "color_destinations": color_destinations,
+                    "alpha_output_connected": alpha_linked,
+                    "alpha_destinations": alpha_destinations,
+                }
+
                 if not img:
                     tex_entry["status"] = "No image assigned"
+                    tex_entry["image_name"] = None
                     detected_issues.append(f"Image Texture node '{img_node.name}' in material '{mat.name}' has no image assigned.")
                 else:
                     filepath = img.filepath
                     is_packed = getattr(img, "packed_file", None) is not None
                     abs_filepath = bpy.path.abspath(filepath) if filepath else ""
                     file_missing = (not is_packed) and bool(filepath) and not os.path.exists(abs_filepath)
+                    has_data = getattr(img, "has_data", False)
+                    img_size = list(img.size) if hasattr(img, "size") else None
+
                     tex_entry["image_name"] = img.name
                     tex_entry["filepath"] = filepath
                     tex_entry["is_packed"] = is_packed
                     tex_entry["file_missing"] = file_missing
+                    tex_entry["has_data"] = has_data
+                    tex_entry["image_size"] = img_size
+
                     if file_missing:
                         tex_entry["status"] = "FILE MISSING (renders pink/magenta)"
                         detected_issues.append(
                             f"Image Texture node '{img_node.name}' in material '{mat.name}' references missing file '{filepath}'. In Blender, missing textures display as solid magenta/pink."
                         )
+                    elif not has_data:
+                        tex_entry["status"] = "NO_DATA (image datablock has no pixel data loaded)"
                     else:
                         tex_entry["status"] = "OK"
+
                 textures_info.append(tex_entry)
+
             mat_entry["image_textures"] = textures_info
+
+        mat_entry["image_texture_connected_to_base_color"] = image_color_to_base_color
+
+        # 5. Distinguish confirmed facts from conditional outcomes
+        observations = []
+        possible_issues = []
+
+        if mat_entry.get("surface_connected"):
+            surf_name = mat_entry.get("surface_shader", {}).get("node_name", "Shader")
+            if principled and img_nodes:
+                bc_val = bsdf_info.get("inputs", {}).get("base_color", {}).get("default_value", [0.8, 0.8, 0.8])
+                first_tex_name = textures_info[0]["node_name"] if textures_info else "Image Texture"
+                first_img_name = textures_info[0].get("image_name") or "unnamed"
+                textures_without_data = [t for t in textures_info if not t.get("has_data") or t.get("file_missing")]
+
+                if image_color_to_base_color:
+                    observations.append(
+                        f"Image Texture Color output is connected to Principled BSDF Base Color, and {surf_name} is connected to Material Output."
+                    )
+                    if textures_without_data:
+                        t_nodata = textures_without_data[0]
+                        possible_issues.append(
+                            f"Image Texture '{t_nodata['node_name']}' is connected to Base Color, but image '{t_nodata.get('image_name')}' "
+                            f"has no pixel data loaded ({t_nodata['status']}). A valid image must be assigned for texture to appear."
+                        )
+                else:
+                    # Confirmed Fact (direct cause of current untextured render)
+                    obs = (
+                        f"Confirmed cause: {surf_name} is connected to Material Output, but Image Texture '{first_tex_name}' ({first_img_name}) "
+                        f"Color output is NOT connected to Principled BSDF Base Color (Base Color is unlinked with default {bc_val}). "
+                        f"This missing link explains why the object currently displays a flat default color instead of the image texture."
+                    )
+                    observations.append(obs)
+                    possible_issues.append(
+                        f"Image Texture '{first_tex_name}' exists in material '{mat.name}', but its Color output is disconnected from Base Color."
+                    )
+
+                    # Conditional Outcome (secondary finding if reconnected)
+                    if textures_without_data:
+                        t_nodata = textures_without_data[0]
+                        sec_obs = (
+                            f"Secondary finding (conditional): Referenced image '{t_nodata.get('image_name')}' currently has no pixel data loaded ({t_nodata['status']}). "
+                            f"While connecting Color to Base Color is required, doing so alone may not display a meaningful texture until a valid image file is opened or generated."
+                        )
+                        observations.append(sec_obs)
+                        possible_issues.append(
+                            f"Image '{t_nodata.get('image_name')}' in '{t_nodata['node_name']}' has no pixel data loaded ({t_nodata['status']}). Once reconnected, a valid image must also be assigned."
+                        )
+            elif principled and not img_nodes:
+                bc_val = bsdf_info.get("inputs", {}).get("base_color", {}).get("default_value", [0.8, 0.8, 0.8])
+                observations.append(
+                    f"Material '{mat.name}' uses uniform Base Color {bc_val} with no Image Texture nodes."
+                )
+
+        mat_entry["observations"] = observations
+        mat_entry["possible_issues"] = possible_issues
 
         materials_detail.append(mat_entry)
 
     # Diagnostic synthesis
+    all_possible = []
+    all_observations = []
+    for m in materials_detail:
+        all_possible.extend(m.get("possible_issues", []))
+        all_observations.extend(m.get("observations", []))
+
     if detected_issues:
         diag_summary = "Issues detected: " + "; ".join(detected_issues)
+    elif all_possible:
+        diag_summary = "; ".join(all_observations) + " Potential issue: " + "; ".join(all_possible)
     elif total_slots == 0:
         diag_summary = f"Object '{object_name}' has no material slots or materials assigned."
     else:
         diag_summary = f"Object '{object_name}' has {total_slots} material slot(s) with valid assignments and connected shaders."
+        if all_observations:
+            diag_summary += " " + "; ".join(all_observations)
 
     return {
         "object_name": object_name,
@@ -1208,6 +1376,8 @@ def get_material_details(object_name: str, slot_index: int = None, material_name
         "material_slots": slots_info,
         "materials": materials_detail,
         "detected_issues": detected_issues,
+        "possible_issues": all_possible,
+        "observations": all_observations,
         "diagnostic_summary": diag_summary,
     }
 
@@ -1274,11 +1444,28 @@ def get_world_and_lighting() -> dict:
 
 def evaluate_python_expression(expression: str) -> dict:
     """Evaluate a read-only bpy python expression. Use sparingly and carefully."""
+    expr = (expression or "").strip()
+    if not expr:
+        return {"error": "Empty expression"}
+
+    # Security: block operators (modifies scene state) and dangerous modules/attributes
+    if "bpy.ops" in expr:
+        return {
+            "error": "Security restriction: 'bpy.ops' operators are not permitted in evaluate_python_expression. Only read-only properties (bpy.data or bpy.context) can be inspected."
+        }
+    if any(blocked in expr for blocked in ["__import__", "__builtins__", "__class__", "__base__", "__subclasses__", "importlib", "subprocess", "os.", "sys.", "shutil"]):
+        return {"error": "Security restriction: Unsafe attribute or import detected in expression."}
+
     try:
         import mathutils
-        # Provide bpy and mathutils in the globals for the eval
-        # Only eval is used (not exec) which limits to single expressions
-        result = eval(expression, {"bpy": bpy, "mathutils": mathutils}, {})
+        safe_builtins = {
+            "len": len, "range": range, "str": str, "int": int, "float": float,
+            "bool": bool, "list": list, "dict": dict, "tuple": tuple, "set": set,
+            "min": min, "max": max, "sum": sum, "enumerate": enumerate, "zip": zip,
+            "getattr": getattr, "hasattr": hasattr, "all": all, "any": any,
+            "round": round, "abs": abs, "isinstance": isinstance, "sorted": sorted,
+        }
+        result = eval(expr, {"__builtins__": safe_builtins, "bpy": bpy, "mathutils": mathutils}, {})
         return {"result": str(result)}
     except Exception as e:
         return {"error": str(e)}
@@ -1328,13 +1515,16 @@ def check_addon_status(addon_name: str) -> dict:
 # Web-based tools (called by AI to access external knowledge)
 # ---------------------------------------------------------------------------
 
+# Module-level static version initialized on the main thread during import
+try:
+    _STATIC_BLENDER_DOC_VERSION = f"{bpy.app.version[0]}.{bpy.app.version[1]}"
+except Exception:
+    _STATIC_BLENDER_DOC_VERSION = "latest"
+
+
 def _get_blender_version_string() -> str:
-    """Return the Blender major.minor version string for doc URLs."""
-    try:
-        v = bpy.app.version
-        return f"{v[0]}.{v[1]}"
-    except Exception:
-        return "latest"
+    """Return the Blender major.minor version string for doc URLs (main-thread cached)."""
+    return _STATIC_BLENDER_DOC_VERSION
 
 
 def search_blender_community(query: str) -> dict:
@@ -1539,7 +1729,7 @@ TOOL_REGISTRY = {
     },
     "get_material_details": {
         "function": get_material_details,
-        "description": "Inspect material slots, face assignments, shader node trees, Material Output surface connections, Principled BSDF settings, and missing image textures for an object. Call this when diagnosing material or shading problems (object looks black/purple/pink, texture not showing, wrong material on faces, empty material slot, disconnected shader output).",
+        "description": "Inspect material slots, face assignments, shader node trees, node-to-node links, Material Output surface connections, Principled BSDF inputs (Base Color, Metallic, Roughness, Normal, Alpha), and Image Texture status and socket connections for an object. Call this when diagnosing material or shading problems (texture not showing, unlinked image texture, wrong material on faces, empty material slot, disconnected shader output).",
         "parameters": {
             "type": "object",
             "properties": {
@@ -1643,12 +1833,218 @@ TOOL_REGISTRY = {
 }
 
 
-def execute_tool(tool_name: str, arguments: dict) -> dict:
-    """Execute a registered tool by name with the given arguments.
+def _make_cache_key(tool_name: str, arguments: dict) -> tuple:
+    """Create a deterministic hashable cache key from a tool name and arguments dictionary."""
+    def _freeze(v):
+        if isinstance(v, dict):
+            return tuple(sorted((k2, _freeze(v2)) for k2, v2 in v.items()))
+        elif isinstance(v, (list, tuple)):
+            return tuple(_freeze(item) for item in v)
+        return v
+    sorted_args = tuple(sorted((k, _freeze(v)) for k, v in (arguments or {}).items()))
+    return (tool_name, sorted_args)
 
-    Returns the tool result as a dict, or an error dict if the tool
-    doesn't exist or raises an exception.
+
+def capture_scene_snapshot(turn_id: str = None) -> dict:
+    """Capture a lightweight plain-Python snapshot of the scene on the main thread.
+
+    Evaluated strictly on Blender's main thread. The returned snapshot contains only
+    plain-Python primitives (dicts, lists, numbers, strings, bools, None) and NO
+    live bpy objects or C references.
     """
+    t0 = time.perf_counter()
+    active_obj = _get_active_object()
+    active_name = active_obj.name if active_obj else None
+
+    basic_ctx = get_basic_context()
+
+    cache = {}
+    # Pre-cache scene-level tools
+    try:
+        cache[_make_cache_key("get_selection_info", {})] = get_selection_info()
+    except Exception as e:
+        cache[_make_cache_key("get_selection_info", {})] = {"error": str(e)}
+
+    try:
+        cache[_make_cache_key("get_viewport_state", {})] = get_viewport_state()
+    except Exception as e:
+        cache[_make_cache_key("get_viewport_state", {})] = {"error": str(e)}
+
+    try:
+        cache[_make_cache_key("get_active_tool_info", {})] = get_active_tool_info()
+    except Exception as e:
+        cache[_make_cache_key("get_active_tool_info", {})] = {"error": str(e)}
+
+    try:
+        cache[_make_cache_key("get_render_settings", {})] = get_render_settings()
+    except Exception as e:
+        cache[_make_cache_key("get_render_settings", {})] = {"error": str(e)}
+
+    try:
+        cache[_make_cache_key("get_world_and_lighting", {})] = get_world_and_lighting()
+    except Exception as e:
+        cache[_make_cache_key("get_world_and_lighting", {})] = {"error": str(e)}
+
+    # Pre-cache active object tools if an active object exists
+    if active_name:
+        try:
+            cache[_make_cache_key("get_mesh_geometry_summary", {"object_name": active_name})] = get_mesh_geometry_summary(active_name)
+        except Exception as e:
+            cache[_make_cache_key("get_mesh_geometry_summary", {"object_name": active_name})] = {"error": str(e)}
+
+        try:
+            cache[_make_cache_key("get_object_details", {"object_name": active_name})] = get_object_details(active_name)
+        except Exception as e:
+            cache[_make_cache_key("get_object_details", {"object_name": active_name})] = {"error": str(e)}
+
+        try:
+            cache[_make_cache_key("get_material_details", {"object_name": active_name})] = get_material_details(active_name)
+        except Exception as e:
+            cache[_make_cache_key("get_material_details", {"object_name": active_name})] = {"error": str(e)}
+
+    # Sanitize everything to pure JSON-safe primitives
+    sanitized_cache = {k: json.loads(json.dumps(v)) for k, v in cache.items()}
+    sanitized_basic = json.loads(json.dumps(basic_ctx))
+
+    t1 = time.perf_counter()
+    capture_time_ms = round((t1 - t0) * 1000, 2)
+
+    return {
+        "turn_id": turn_id or "default",
+        "timestamp": time.time(),
+        "capture_time_ms": capture_time_ms,
+        "basic_context": sanitized_basic,
+        "active_object": active_name,
+        "cache": sanitized_cache,
+    }
+
+
+class InspectionDispatcher:
+    """Thread-safe queue and coordinator for main-thread scene inspection.
+
+    Enables background worker threads to request inspection tools without
+    ever calling the Blender API directly. The requests are processed on the
+    main thread via a timer callback, converted to plain Python primitives,
+    and returned to the waiting worker thread.
+    """
+    def __init__(self):
+        self._queue = queue.Queue()
+        self._active_turn_id = None
+        self._active_snapshot = None
+        self._lock = threading.Lock()
+        self._is_cancelled = False
+
+    def set_active_turn(self, turn_id: str, snapshot: dict):
+        with self._lock:
+            self._active_turn_id = turn_id
+            self._active_snapshot = snapshot
+            self._is_cancelled = False
+            # Drain any leftover requests from previous turns
+            while not self._queue.empty():
+                try:
+                    req = self._queue.get_nowait()
+                    req["result"] = {"error": "Superceded by newer turn."}
+                    req["event"].set()
+                except queue.Empty:
+                    break
+
+    def clear_active_turn(self):
+        with self._lock:
+            self._is_cancelled = True
+            self._active_turn_id = None
+            self._active_snapshot = None
+            while not self._queue.empty():
+                try:
+                    req = self._queue.get_nowait()
+                    req["result"] = {"error": "Turn ended or cancelled."}
+                    req["event"].set()
+                except queue.Empty:
+                    break
+
+    def get_active_snapshot(self) -> dict:
+        with self._lock:
+            return self._active_snapshot
+
+    def request_main_thread_inspection(self, tool_name: str, arguments: dict, timeout: float = 5.0) -> dict:
+        """Called from worker thread to request safe tool execution on the main thread."""
+        # If called on main thread directly, execute immediately
+        if threading.current_thread() is threading.main_thread():
+            return execute_tool_direct(tool_name, arguments)
+
+        with self._lock:
+            if self._is_cancelled:
+                return {"error": "Inspection cancelled."}
+            turn_id = self._active_turn_id
+
+        req = {
+            "turn_id": turn_id,
+            "tool_name": tool_name,
+            "arguments": arguments,
+            "event": threading.Event(),
+            "result": None,
+            "timestamp": time.time(),
+        }
+        self._queue.put(req)
+
+        # Wait for main thread to process
+        signaled = req["event"].wait(timeout=timeout)
+        if not signaled:
+            with self._lock:
+                req["timed_out"] = True
+            return {
+                "error": f"Tool '{tool_name}' inspection timed out on main thread after {timeout}s.",
+                "tool_name": tool_name,
+            }
+        return req["result"]
+
+    def process_pending_requests(self) -> int:
+        """Called periodically on Blender's MAIN THREAD (e.g. by timer)."""
+        if threading.current_thread() is not threading.main_thread():
+            return 0
+
+        processed = 0
+        while not self._queue.empty():
+            try:
+                req = self._queue.get_nowait()
+            except queue.Empty:
+                break
+
+            with self._lock:
+                is_cancelled = self._is_cancelled or (req["turn_id"] != self._active_turn_id) or req.get("timed_out", False)
+                snapshot = self._active_snapshot
+
+            if is_cancelled:
+                req["result"] = {"error": "Request cancelled, expired, or timed out."}
+                req["event"].set()
+                continue
+
+            tool_name = req["tool_name"]
+            tool_args = req["arguments"]
+
+            try:
+                # Execute safely on the main thread
+                raw_res = execute_tool_direct(tool_name, tool_args)
+                # Sanitize to plain Python primitives
+                clean_res = json.loads(json.dumps(raw_res))
+                # Cache in snapshot if available
+                if snapshot is not None and "error" not in clean_res:
+                    cache_key = _make_cache_key(tool_name, tool_args)
+                    snapshot.setdefault("cache", {})[cache_key] = copy.deepcopy(clean_res)
+                req["result"] = clean_res
+            except Exception as e:
+                req["result"] = {"error": f"Execution on main thread failed: {str(e)}"}
+            finally:
+                req["event"].set()
+                processed += 1
+
+        return processed
+
+
+_global_inspector = InspectionDispatcher()
+
+
+def execute_tool_direct(tool_name: str, arguments: dict) -> dict:
+    """Execute a registered tool directly by name on the current thread."""
     tool_entry = TOOL_REGISTRY.get(tool_name)
     if not tool_entry:
         return {"error": f"Unknown tool: {tool_name}"}
@@ -1657,6 +2053,41 @@ def execute_tool(tool_name: str, arguments: dict) -> dict:
         return tool_entry["function"](**arguments)
     except Exception as e:
         return {"error": f"Tool '{tool_name}' failed: {str(e)}"}
+
+
+def execute_tool(tool_name: str, arguments: dict, snapshot: dict = None) -> dict:
+    """Execute a registered tool safely across threads with caching and main-thread dispatch.
+
+    1. Returns immediately if result is cached in snapshot.
+    2. Web tools execute pure network I/O in current thread.
+    3. Main-thread calls execute directly.
+    4. Worker-thread calls dispatch to main thread via _global_inspector and return plain Python.
+    """
+    # Pure web tools (no Blender data needed)
+    if tool_name in ("search_blender_community", "fetch_blender_docs"):
+        return execute_tool_direct(tool_name, arguments)
+
+    cache_key = _make_cache_key(tool_name, arguments)
+    active_snap = snapshot or _global_inspector.get_active_snapshot()
+
+    # Check if already in snapshot cache
+    if active_snap and "cache" in active_snap:
+        if cache_key in active_snap["cache"]:
+            return copy.deepcopy(active_snap["cache"][cache_key])
+
+    # If running on the main thread, execute directly and cache
+    if threading.current_thread() is threading.main_thread():
+        res = execute_tool_direct(tool_name, arguments)
+        clean_res = json.loads(json.dumps(res))
+        if active_snap and "cache" in active_snap and "error" not in clean_res:
+            active_snap["cache"][cache_key] = copy.deepcopy(clean_res)
+        return clean_res
+
+    # Running in a worker thread and not cached: dispatch safely to main thread
+    res = _global_inspector.request_main_thread_inspection(tool_name, arguments)
+    if active_snap and "cache" in active_snap and "error" not in res:
+        active_snap["cache"][cache_key] = copy.deepcopy(res)
+    return res
 
 
 # ---------------------------------------------------------------------------

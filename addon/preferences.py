@@ -104,6 +104,22 @@ class BLENDERMENTOR_OT_fetch_models(bpy.types.Operator):
                 results.append((mid, m.get("display_name", mid)))
             return results
 
+        elif provider == 'DEEPSEEK':
+            url = "https://api.deepseek.com/models"
+            req = urllib.request.Request(url, headers={
+                "Authorization": f"Bearer {api_key}",
+                "Accept": "application/json",
+            })
+            with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                data = json.loads(resp.read().decode())
+            results = []
+            for m in data.get("data", []):
+                mid = m.get("id", "")
+                results.append((mid, m.get("name", mid)))
+            if not results:
+                results = [("deepseek-chat", "deepseek-chat"), ("deepseek-reasoner", "deepseek-reasoner")]
+            return results
+
         elif provider == 'OLLAMA':
             host = (ollama_host or "http://localhost:11434").rstrip("/")
             url = f"{host}/api/tags"
@@ -179,6 +195,25 @@ class BLENDERMENTOR_OT_test_connection(bpy.types.Operator):
                     resp.read()
                 self.report({'INFO'}, "✓ Claude connection successful!")
 
+            elif prefs.provider == 'DEEPSEEK':
+                url = "https://api.deepseek.com/chat/completions"
+                body = json.dumps({
+                    "model": model_id or "deepseek-chat",
+                    "max_tokens": 10,
+                    "messages": [{"role": "user", "content": "Say OK"}],
+                }).encode()
+                req = urllib.request.Request(
+                    url, data=body,
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=15, context=ctx) as resp:
+                    resp.read()
+                self.report({'INFO'}, "✓ DeepSeek connection successful!")
+
             elif prefs.provider == 'OLLAMA':
                 host = (prefs.ollama_host or "http://localhost:11434").rstrip("/")
                 url = f"{host}/api/chat"
@@ -226,6 +261,8 @@ class BLENDERMENTOR_OT_open_api_link(bpy.types.Operator):
             webbrowser.open("https://aistudio.google.com")
         elif prefs.provider == 'CLAUDE':
             webbrowser.open("https://console.anthropic.com")
+        elif prefs.provider == 'DEEPSEEK':
+            webbrowser.open("https://platform.deepseek.com/api_keys")
         else:  # OLLAMA
             webbrowser.open("https://ollama.com")
         return {'FINISHED'}
@@ -257,6 +294,7 @@ class BlenderMentorPreferences(bpy.types.AddonPreferences):
         items=[
             ('GEMINI', "Gemini", "Google Gemini API"),
             ('CLAUDE', "Claude", "Anthropic Claude API"),
+            ('DEEPSEEK', "DeepSeek", "DeepSeek API (V3 / R1)"),
             ('OLLAMA', "Ollama (Local)", "Local AI via Ollama — no API key needed"),
         ],
         default='GEMINI',
@@ -314,6 +352,8 @@ class BlenderMentorPreferences(bpy.types.AddonPreferences):
         except Exception:
             if self.provider == 'GEMINI':
                 return "gemini-2.0-flash"
+            elif self.provider == 'DEEPSEEK':
+                return "deepseek-chat"
             elif self.provider == 'OLLAMA':
                 return "llama3"
             return "claude-sonnet-4-20250514"
