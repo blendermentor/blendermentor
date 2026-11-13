@@ -1,6 +1,6 @@
 # Privacy Notice for BlenderMentor
 
-**Last Updated: May 15, 2026**
+**Last Updated: November 2026**
 
 BlenderMentor ("the Addon") is a self-contained Blender addon designed to teach you how to use Blender through an AI-powered interface. Your privacy is a core design principle: the Addon communicates directly with your chosen AI provider and does not use any intermediate servers.
 
@@ -19,7 +19,7 @@ When you ask a question, the Addon reads the current state of your Blender scene
 - UI state (which panels are visible).
 
 ### B. User Queries
-The text questions you type into the chat panel.
+The text questions you type or dictate into the chat interface.
 
 ### C. API Configuration
 Your AI provider choice, API keys, or local host addresses.
@@ -28,11 +28,11 @@ Your AI provider choice, API keys, or local host addresses.
 
 ## 2. Data Transmission
 
-BlenderMentor **does not** have a central server. All communication happens directly from your computer to the AI provider you have configured:
+BlenderMentor **does not** operate any intermediate or proxy servers. All communication happens directly from your computer to the AI provider you have configured in preferences:
 
 - **Google Gemini API**: Data is sent directly to Google.
 - **Anthropic Claude API**: Data is sent directly to Anthropic.
-- **OpenAI API**: Data is sent directly to OpenAI.
+- **DeepSeek API**: Data is sent directly to DeepSeek.
 - **Ollama (Local)**: Data is sent to your **locally running Ollama server**. In this mode, no data leaves your local machine or network unless your Ollama instance is configured to do so. This is the most private way to use BlenderMentor.
 
 The information sent includes your **Scene Context** and your **User Query**. This is necessary for the AI to understand your current situation and provide accurate steps.
@@ -51,11 +51,15 @@ The Addon stores data locally on your machine within Blender:
 
 ---
 
-## 4. Third-Party Privacy Policies
+## 4. Third-Party AI Provider Privacy Policies
 
-Since data is sent directly to AI providers, your use of the Addon is subject to their respective privacy policies and terms of service:
+BlenderMentor functions as a direct client interface. Because you supply your own API keys or host endpoints, your use is governed exclusively by the terms of service and privacy policies of the respective AI provider(s) you choose to use.
+
+We encourage you to review the privacy policy and data retention practices of your selected provider before transmitting sensitive scene data:
 - [Google Privacy Policy](https://policies.google.com/privacy)
 - [Anthropic Privacy Policy](https://www.anthropic.com/privacy)
+- [DeepSeek Privacy Policy](https://www.deepseek.com/privacy)
+- If using local Ollama models, your data remains entirely within your local environment.
 
 ---
 

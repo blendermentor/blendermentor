@@ -1,21 +1,28 @@
 # BlenderMentor
 
+[![Website](https://img.shields.io/badge/Website-blendermentor.org-4B8BBE?style=flat&logo=world&logoColor=white)](https://www.blendermentor.org)
+[![Latest Release](https://img.shields.io/github/v/release/blendermentor/blendermentor?label=Release&color=orange)](https://github.com/blendermentor/blendermentor/releases/latest)
+[![Blender](https://img.shields.io/badge/Blender-4.2%2B%20%7C%204.0%2B-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+
+[🌐 Website](https://www.blendermentor.org) • [📦 Download Latest Release (v0.5.0)](https://github.com/blendermentor/blendermentor/releases/latest) • [📖 Detailed Instructions](INSTRUCTIONS.md) • [🤝 Contributing](CONTRIBUTING.md) • [🛡️ Privacy Notice](PRIVACY.md) • [📄 License](LICENSE)
+
 **BlenderMentor** is an AI-powered teaching companion embedded directly inside Blender. It teaches you how to create by answering your questions, breaking complex workflows into step-by-step guidance, and visually highlighting relevant UI elements in real-time — without ever altering your scene on your behalf.
 
-> ⚠️ This is a small side project, vibe-coded after work hours, very much a work in progress, and licensed under **GPL v3**.
+> ⚠️ This is an open-source project, vibe-coded after work hours, very much a work in progress, and licensed under **GPL v3**.
 
 BlenderMentor offers a **Dual Experience** tailored to your workflow:
 1. **In-Viewport Remote Control (N-Panel)**: A clean, distraction-free companion in your 3D Viewport sidebar that shows only the active step, reasoning, and quick action controls.
-2. **BlenderMentor Console (`http://localhost:8765`)**: An interactive dual-column web app built for second monitors, laptops, and tablets — featuring official Blender vector icons, hands-free voice dictation, live audio VU meter, and customizable voice readout.
+2. **BlenderMentor Console (`http://localhost:8765`)**: An interactive dual-column web app built for second monitors, laptops, and tablets — featuring official Blender vector icons, hands-free voice dictation, live audio VU meter, resilient background auto-reconnect, and customizable voice readout.
 
 ---
 
 ## 🚀 Part 1: Installation & Setup
 
-BlenderMentor is fully compliant with the modern **Blender 4.2+ Extensions system**.
+BlenderMentor is fully compliant with the modern **Blender 4.2+ Extensions system** and also supports traditional Blender 4.0+ setups.
 
 ### Step 1: Download the Add-on
-* Download the latest `blendermentor_addon.zip` package from the [Releases](https://github.com/blendermentor/blendermentor/releases) page.
+* Download the latest **`BlenderMentor-0.5.0.zip`** package from the [Releases](https://github.com/blendermentor/blendermentor/releases/latest) page.
 * *Note: Do not unzip the package; keep it as a `.zip` file.*
 
 ### Step 2: Access Blender Preferences
@@ -26,27 +33,27 @@ BlenderMentor is fully compliant with the modern **Blender 4.2+ Extensions syste
 ![Installation](images/Installation.png)
 * On the left sidebar of the Preferences window, select the **Get Extensions** tab.
 * In the top-right header, click the **cog/gear icon** and select **Install from Disk...**
-* Navigate to your downloads, select `blendermentor_addon.zip`, and click **Install**.
+* Navigate to your downloads, select **`BlenderMentor-0.5.0.zip`**, and click **Install**.
 * Blender will extract the extension, register it in your local repository, and enable it automatically.
 
-### Step 4: Generate Your AI API Key (Google Gemini Example)
+### Step 4: Configure Your AI API Key (Bring Your Own Key)
 ![API Setup](images/api.png)
-BlenderMentor runs locally and requires no registration on our end — you bring your own API key. Google Gemini offers a generous free tier for developers:
-* Go to [Google AI Studio](https://aistudio.google.com).
-* Log in with your standard Google account.
-* Click **Get API Key** in the top sidebar.
-* Click **Create API Key**, select a project, and copy your newly generated key.
+BlenderMentor runs locally and requires no account or registration on our end — you bring your own API key:
+* **Google Gemini**: Get a free key at [Google AI Studio](https://aistudio.google.com).
+* **Anthropic Claude**: Get a key from the [Anthropic Console](https://console.anthropic.com).
+* **DeepSeek**: Get a key from the [DeepSeek Platform](https://platform.deepseek.com).
+* **Ollama**: Run completely local, private offline models with [Ollama](https://ollama.com) (no API key required).
 
 ### Step 5: Configure Add-on Preferences
 ![Plugin Setup](images/setup.png)
 * In Blender Preferences, expand the **BlenderMentor** details panel.
-* Set **AI Provider** to **Gemini** (or **Claude** / **Ollama**).
+* Set **AI Provider** to **Gemini**, **Claude**, **DeepSeek**, or **Ollama**.
 * Paste your API key into the **API Key** field (hidden as a password field for security).
-* Click **Fetch Models** (the file folder refresh icon) to retrieve the live list of models from the provider.
-* Select your preferred model (e.g. `gemini-2.5-flash`).
-* Click **Test Connection** (the checkmark icon) to verify (`✓ Gemini connection successful!`).
+* Click **Fetch Models** (the file folder refresh icon) to retrieve the live list of models dynamically from your provider.
+* Select your preferred model (e.g. `gemini-2.5-flash` or `deepseek-chat`).
+* Click **Test Connection** (the checkmark icon) to verify (`✓ Connection successful!`).
 
-> 💡 **Tip for Gemini Free Tier Users**: When using a free API key from Google AI Studio, make sure to uncheck **"Enable Web Search"** in preferences to prevent Google's search grounding quota restrictions (see [Troubleshooting](#-part-4-troubleshooting--faq)).
+> 💡 **Tip for Gemini Free Tier Users**: When using a free API key from Google AI Studio, uncheck **"Enable Web Search"** in preferences to prevent Google's search grounding quota restrictions (see [Troubleshooting](#-part-4-troubleshooting--faq)).
 
 ---
 
@@ -63,6 +70,9 @@ Designed to keep your 3D Viewport clean and distraction-free while modeling.
   * Tap the square mic button (or press **`Alt + ↑`**) to start speaking. A glowing green ring indicates listening state.
   * Spoken words stream directly into the text field in real time.
   * Tap again (or press **`Alt + ↑`**) to stop dictating and send your question.
+* **🛑 Speaker Stop & Cancel Controls**:
+  * Tap the **Speaker Stop** icon to instantly silence any active voice readout.
+  * Press **Cancel** or **`Alt + ↓`** during AI generation to halt the request and restore your original prompt into the text field for immediate editing.
 * **Integrated Text Input**: Type questions directly in Blender and press **Enter** or click the Send button.
 * **Quick Action Buttons**:
   * **💡 Re-highlight**: Replay the UI highlight for the active step.
@@ -76,7 +86,7 @@ These shortcuts work from **any** editor window in Blender (3D View, Properties,
 | Shortcut (Windows / Linux) | Shortcut (macOS) | Action |
 | :--- | :--- | :--- |
 | **`Alt + ↑`** | **`Option + ↑`** | **Toggle Voice Dictation** (start speaking, tap again to submit) |
-| **`Alt + ↓`** | **`Option + ↓`** | **Cancel Voice Dictation** (press once to keep text, press again to clear) |
+| **`Alt + ↓`** | **`Option + ↓`** | **Cancel Generation / Dictation** (stops AI generation and restores prompt) |
 | **`Alt + →`** | **`Option + →`** | **Next Step** (advances step, updates highlight, speaks step) |
 | **`Alt + ←`** | **`Option + ←`** | **Previous Step** (reverses step, updates highlight) |
 
@@ -89,7 +99,7 @@ Perfect for dual-monitor setups, laptops, and tablets.
 * **Launch the Console**: Click the **"Start BlenderMentor"** or **"Console"** button in the N-panel header, or navigate to **`http://localhost:8765`** in any web browser.
 * **Blender Dark Theme**: Styled with Blender's signature dark aesthetic, rounded container panels, and soft orange accents.
 * **Dual-Column Layout with Splitter**:
-  * **Left Column**: Live conversation history, AI thinking state, and voice input controls.
+  * **Left Column**: Live conversation history, AI thinking state, prompt restoration, and voice input controls.
   * **Right Column**: Guided step sequence, active hero card with background reasoning, and action controls.
   * **Interactive Divider**: Drag the vertical split line to resize columns to your preference (persisted automatically via `localStorage`). Double-click to reset.
 * **🎨 791 Official Vector Icons**: Uses authentic vector icons extracted from Blender's interface to help you identify tools instantly.
@@ -98,7 +108,9 @@ Perfect for dual-monitor setups, laptops, and tablets.
   * **Three Readout Modes**: *Title & Description* (default), *Title Only*, or *Off*.
   * **Speed Selector**: Adjust narration speed from **`0.8x`** to **`2.0x`** with instant preview.
   * **Voice Selector**: Pick your preferred system narrator.
+  * **🛑 Instant Stop**: Click the speaker-stop button anytime to immediately halt narration.
   * **🏁 Completion Celebration**: Congratulates you visually and audibly when you reach the final step.
+* **🔄 Background Reconnect Resilience**: Automatically detects connection hiccups or Blender restarts and seamlessly reconnects with exponential backoff.
 
 ---
 
@@ -107,11 +119,12 @@ Perfect for dual-monitor setups, laptops, and tablets.
 ### 💡 Real-Time UI Highlighting
 Whenever a step is active, BlenderMentor automatically draws a visual highlight over the relevant Blender UI element — directing your eyes to the exact editor area, navigation tab, sidebar, menu, or panel button required for that action.
 
-### 🧠 Agentic Tool-Calling & Deep Context
+### 🧠 Agentic Tool-Calling & Deep Scene Diagnostics
 Instead of overwhelming the AI with massive scene dumps, BlenderMentor uses an intelligent **agentic tool loop**:
 * It begins with minimal base context (active object, mode, visible editors).
-* When needed, the AI calls on-demand tools to inspect your scene (`check_addon_status`, `get_render_settings`, `get_viewport_state`, `get_object_details`).
-* It can query Blender community answers and official version-matched documentation.
+* When needed, the AI calls on-demand tools to inspect your scene (`check_addon_status`, `get_render_settings`, `get_viewport_state`, `get_object_details`, `get_world_and_lighting`).
+* **Deep Diagnostic Awareness**: Automatically flushes edit-mode geometry buffers, inspects material shader node networks, and evaluates animation keyframe states so you get answers that match your actual viewport reality.
+* Queries Blender community solutions and version-matched official documentation.
 
 ### 🔍 Exact Version & OS Awareness
 BlenderMentor passes your exact Blender version and operating system (macOS / Windows / Linux) to the AI. You get definitive, version-matched instructions (such as Blender 4.2+ Extensions vs older Add-ons, or macOS `Blender > Preferences` vs Windows `Edit > Preferences`) without vague, conflicting advice.

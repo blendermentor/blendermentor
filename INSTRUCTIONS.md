@@ -2,46 +2,48 @@
 
 Welcome to **BlenderMentor**! This guide provides comprehensive, step-by-step instructions on how to install, configure, and get the most out of your AI-powered teaching assistant directly inside Blender.
 
+[🌐 Official Website](https://www.blendermentor.org) • [📦 Download Latest Release (v0.5.0)](https://github.com/blendermentor/blendermentor/releases/latest)
+
 ---
 
 ## 🚀 Part 1: Installation & Setup
 
-BlenderMentor is fully compliant with the modern **Blender 4.2+ Extensions system**. Follow these steps to install and enable it.
+BlenderMentor is fully compliant with the modern **Blender 4.2+ Extensions system** and also supports traditional Blender 4.0+ setups. Follow these steps to install and enable it.
 
 ### Step 1: Download the Add-on
-*   Download the latest `blendermentor_addon.zip` package from our [Releases page](https://github.com/blendermentor/blendermentor/releases). 
+*   Download the latest **`BlenderMentor-0.5.0.zip`** package from our [Releases page](https://github.com/blendermentor/blendermentor/releases/latest). 
 *   *Note: Do not unzip the package; keep it as a `.zip` file.*
 
 ### Step 2: Access Blender Preferences
 *   Launch Blender.
-*   In the top-left menu bar, go to **Edit ➔ Preferences...**
-*   A separate Preferences window will open.
+*   In the top-left menu bar, go to **Edit ➔ Preferences...** (or **Blender ➔ Preferences...** on macOS).
+*   The Preferences window will open.
 
 ### Step 3: Install the Add-on
 ![Installation](images/Installation.png)
 *   On the left sidebar of the Preferences window, select the **Get Extensions** tab.
-*   In the top-right header of the Preferences window, click the **cog/gear icon** to open the repository settings.
+*   In the top-right header of the Preferences window, click the **cog/gear icon** to open repository options.
 *   Select **Install from Disk...** from the dropdown menu.
-*   Navigate to your downloads, select `blendermentor_addon.zip`, and click **Install**.
+*   Navigate to your downloads, select **`BlenderMentor-0.5.0.zip`**, and click **Install**.
 *   Blender will extract the extension, register it in your local `"User Default"` repository, and enable it automatically.
 
-### Step 4: Generate your AI API Key (Google Gemini Example)
+### Step 4: Configure Your AI API Key (Bring Your Own Key)
 ![API Setup](images/api.png)
-BlenderMentor runs locally and requires no registration on our end—you bring your own API keys. Google Gemini offers a highly accurate and generous free tier for developers:
-*   Go to [Google AI Studio](https://aistudio.google.com).
-*   Log in with your standard Google account.
-*   Click the prominent **Get API Key** button in the top sidebar.
-*   Click **Create API Key**, search for/select a project, and copy your newly generated key.
+BlenderMentor runs locally and requires no registration or subscription on our end — you bring your own API key:
+*   **Google Gemini**: Go to [Google AI Studio](https://aistudio.google.com), log in, and click **Get API Key** ➔ **Create API Key**.
+*   **Anthropic Claude**: Obtain a key from the [Anthropic Console](https://console.anthropic.com).
+*   **DeepSeek**: Create an API key at the [DeepSeek Platform](https://platform.deepseek.com).
+*   **Ollama (Local)**: Run private offline models locally via [Ollama](https://ollama.com) (no key required).
 
 ### Step 5: Configure the Add-on Preferences
 ![Plugin Setup](images/setup.png)
 *   Back in Blender Preferences, select the **Get Extensions** tab (or **Add-ons** tab).
 *   Locate **BlenderMentor** and click the small arrow next to its name to expand the details and settings panel.
-*   Set **AI Provider** to **Gemini**.
+*   Set **AI Provider** to your chosen provider (**Gemini**, **Claude**, **DeepSeek**, or **Ollama**).
 *   Paste your copied key into the **API Key** field (the key is hidden as a password field for security).
-*   Click **Fetch Models** (the file folder refresh icon). BlenderMentor will connect to the API, retrieve the active list of Gemini models, and populate the dropdown.
-*   Select your preferred model (e.g., `gemini-2.0-flash`).
-*   Click **Test Connection** (the checkmark icon) to confirm the key is active and working. You will see a success message (`✓ Gemini connection successful!`).
+*   Click **Fetch Models** (the file folder refresh icon). BlenderMentor will connect to the API, retrieve the active list of models, and populate the dropdown dynamically.
+*   Select your preferred model (e.g., `gemini-2.5-flash` or `deepseek-chat`).
+*   Click **Test Connection** (the checkmark icon) to confirm the key is active and working (`✓ Connection successful!`).
 
 ---
 
@@ -56,8 +58,18 @@ Once configured, BlenderMentor lives in your 3D Viewport sidebar and is ready to
 
 ### Step 2: Ask a Question
 ![Asking questions](images/usage_01.png)
-*   Type a question in the input field at the bottom of the panel (e.g., *"How do I add a subdiv modifier to my active mesh?"*).
-*   Click the **Send** button (the Play icon) or press **Enter** to submit your query.
+*   **Type or Speak**: Type your question in the text input, or tap the square **Microphone** button (or press **`Alt + ↑`** / **`Option + ↑`**) to dictate hands-free.
+*   **Submit**: Click **Send** (the Play icon) or press **Enter**.
+*   **Cancel & Restore**: Press **`Alt + ↓`** (or click Cancel) to abort generation and restore your prompt into the input field for instant editing.
+*   **Silence Voice Readout**: Click the **Speaker Stop** icon anytime to halt audio narration mid-sentence.
+
+#### Global Keyboard Shortcuts (Work Across Any Blender Window)
+| Shortcut (Win / Linux) | Shortcut (macOS) | Action |
+| :--- | :--- | :--- |
+| **`Alt + ↑`** | **`Option + ↑`** | Toggle Voice Dictation (tap to listen, tap to send) |
+| **`Alt + ↓`** | **`Option + ↓`** | Cancel generation / dictation & restore prompt |
+| **`Alt + →`** | **`Option + →`** | Advance to Next Step globally |
+| **`Alt + ←`** | **`Option + ←`** | Go back to Previous Step globally |
 
 ---
 

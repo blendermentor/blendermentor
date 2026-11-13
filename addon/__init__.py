@@ -8,11 +8,12 @@
 bl_info = {
     "name": "BlenderMentor",
     "author": "BlenderMentor Contributors",
-    "version": (0, 4, 0),
+    "version": (0, 5, 0),
     "blender": (4, 0, 0),
     "location": "View3D > Sidebar > BlenderMentor (Remote Control & Console)",
     "description": "AI-powered teaching assistant that guides you through Blender with step-by-step instructions and UI highlighting",
     "category": "3D View",
+    "doc_url": "https://www.blendermentor.org",
 }
 
 import bpy
