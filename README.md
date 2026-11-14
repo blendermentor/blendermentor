@@ -1,5 +1,7 @@
 # BlenderMentor
 
+![BlenderMentor Banner](images/LogoType.png)
+
 [![Website](https://img.shields.io/badge/Website-blendermentor.org-4B8BBE?style=flat&logo=world&logoColor=white)](https://www.blendermentor.org)
 [![Latest Release](https://img.shields.io/github/v/release/blendermentor/blendermentor?label=Release&color=orange)](https://github.com/blendermentor/blendermentor/releases/latest)
 [![Blender](https://img.shields.io/badge/Blender-4.2%2B%20%7C%204.0%2B-E87D0D?logo=blender&logoColor=white)](https://www.blender.org/)
