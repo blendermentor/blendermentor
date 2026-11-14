@@ -63,6 +63,8 @@ Once configured, BlenderMentor lives in your 3D Viewport sidebar and is ready to
 *   **Cancel & Restore**: Press **`Alt + ↓`** (or click Cancel) to abort generation and restore your prompt into the input field for instant editing.
 *   **Silence Voice Readout**: Click the **Speaker Stop** icon anytime to halt audio narration mid-sentence.
 
+> 💡 **Voice Interactions & Browser Compatibility**: Voice dictation and audio narration leverage native browser capabilities (`Web Speech API` & `SpeechSynthesis`) via the Browser Companion (`http://localhost:8765`). Users should choose **Google Chrome** or **Microsoft Edge** as their browser for the best speech recognition accuracy and natural TTS voices.
+
 #### Global Keyboard Shortcuts (Work Across Any Blender Window)
 | Shortcut (Win / Linux) | Shortcut (macOS) | Action |
 | :--- | :--- | :--- |

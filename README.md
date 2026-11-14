@@ -112,6 +112,7 @@ Perfect for dual-monitor setups, laptops, and tablets.
   * **Voice Selector**: Pick your preferred system narrator.
   * **🛑 Instant Stop**: Click the speaker-stop button anytime to immediately halt narration.
   * **🏁 Completion Celebration**: Congratulates you visually and audibly when you reach the final step.
+* **🌐 Browser-Powered Voice Engine (Chrome or Edge)**: Voice interactions (both speech-to-text dictation and text-to-speech narration) leverage native browser web APIs. Users will need to use a Chromium-based browser—such as **Google Chrome** or **Microsoft Edge**—for accurate voice dictation and high-quality natural TTS voice synthesis.
 * **🔄 Background Reconnect Resilience**: Automatically detects connection hiccups or Blender restarts and seamlessly reconnects with exponential backoff.
 
 ---
@@ -187,7 +188,7 @@ Enable **Developer Mode** in preferences to unlock internal testing utilities:
 * **Direct Connections**: All requests are sent directly from your machine to your chosen AI provider endpoint. No intermediary proxy servers.
 * **Local Keys**: API keys are saved exclusively in your local `AddonPreferences` and never saved inside `.blend` project files.
 * **Zero Telemetry**: No tracking, analytics, or external telemetry of any kind.
-* **No Autonomous Scene Alteration**: BlenderMentor will never alter your meshes, delete objects, or run destructive operations on your behalf.
+* **No Autonomous Scene Alteration**: BlenderMentor is designed to guide you step by step and it does not alter your meshes, delete objects, or run destructive operations on your behalf.
 
 ---
 
